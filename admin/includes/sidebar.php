@@ -23,6 +23,12 @@ $companyName = $companyName ?? 'CAT Dump'; // Fallback for includes
         <a href="#bookings" class="nav-link-desktop flex items-center p-3 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="bookings">
             <i class="fas fa-book-open mr-3"></i>Bookings
         </a>
+        <a href="#invoices" class="nav-link-desktop flex items-center p-3 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="invoices">
+            <i class="fas fa-file-invoice-dollar mr-3"></i>Invoices
+        </a>
+        <a href="#reviews" class="nav-link-desktop flex items-center p-3 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="reviews">
+            <i class="fas fa-star mr-3"></i>Reviews
+        </a>
         <a href="#equipment" class="nav-link-desktop flex items-center p-3 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="equipment">
             <i class="fas fa-dumpster mr-3"></i>Equipment
         </a>
@@ -62,6 +68,10 @@ $companyName = $companyName ?? 'CAT Dump'; // Fallback for includes
     <a href="#bookings" class="nav-link-mobile flex flex-col items-center p-2 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="bookings">
         <i class="fas fa-book-open text-xl mb-1"></i>
         <span class="text-xs">Bookings</span>
+    </a>
+     <a href="#invoices" class="nav-link-mobile flex flex-col items-center p-2 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="invoices">
+        <i class="fas fa-file-invoice-dollar text-xl mb-1"></i>
+        <span class="text-xs">Invoices</span>
     </a>
     <a href="#settings" class="nav-link-mobile flex flex-col items-center p-2 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="settings">
         <i class="fas fa-cogs text-xl mb-1"></i>

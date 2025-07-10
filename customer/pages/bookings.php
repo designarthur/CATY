@@ -15,9 +15,8 @@ if (!is_logged_in()) {
 
 $user_id = $_SESSION['user_id'];
 $bookings = [];
-$booking_detail = null; // To hold data for a single booking detail view if requested
+$booking_detail = null; 
 
-// Check if a specific booking ID is requested for detail view
 $requested_booking_id = $_GET['booking_id'] ?? null;
 
 if ($requested_booking_id) {
@@ -28,7 +27,7 @@ if ($requested_booking_id) {
                                     b.status, b.total_price, b.created_at, b.live_load_requested, b.is_urgent,
                                     b.equipment_details, b.junk_details,
                                     inv.invoice_number, inv.amount AS invoice_amount, inv.status AS invoice_status,
-                                    v.name as vendor_name -- Fetch vendor name
+                                    v.name as vendor_name 
                                 FROM
                                     bookings b
                                 LEFT JOIN
@@ -42,18 +41,19 @@ if ($requested_booking_id) {
     $result_detail = $stmt_detail->get_result();
     if ($result_detail->num_rows > 0) {
         $booking_detail = $result_detail->fetch_assoc();
-        // Decode JSON fields with null coalescing to prevent deprecation warnings
         $booking_detail['equipment_details'] = json_decode($booking_detail['equipment_details'] ?? '[]', true);
-        $booking_detail['junk_details'] = json_decode($booking_detail['junk_details'] ?? '{}', true); // Junk details often an object
+        $booking_detail['junk_details'] = json_decode($booking_detail['junk_details'] ?? '{}', true);
     }
     $stmt_detail->close();
 }
 
-// If no specific booking ID requested or if ID not found, fetch all bookings for the list
+
 if (!$booking_detail) {
+    // Fetch all bookings and check if they have been reviewed
     $stmt_all_bookings = $conn->prepare("SELECT
                                             b.id, b.booking_number, b.service_type, b.start_date, b.end_date,
-                                            b.delivery_location, b.status, b.equipment_details, b.junk_details
+                                            b.delivery_location, b.status, b.equipment_details, b.junk_details,
+                                            (SELECT COUNT(*) FROM reviews r WHERE r.booking_id = b.id) AS review_count
                                         FROM
                                             bookings b
                                         WHERE
@@ -63,9 +63,8 @@ if (!$booking_detail) {
     $stmt_all_bookings->execute();
     $result_all_bookings = $stmt_all_bookings->get_result();
     while ($row = $result_all_bookings->fetch_assoc()) {
-        // Decode JSON fields for listing with null coalescing
         $row['equipment_details'] = json_decode($row['equipment_details'] ?? '[]', true);
-        $row['junk_details'] = json_decode($row['junk_details'] ?? '{}', true); // Junk details often an object
+        $row['junk_details'] = json_decode($row['junk_details'] ?? '{}', true);
         $bookings[] = $row;
     }
     $stmt_all_bookings->close();
@@ -73,7 +72,6 @@ if (!$booking_detail) {
 
 $conn->close();
 
-// Function to get status badge classes
 function getStatusBadgeClass($status) {
     switch ($status) {
         case 'delivered':
@@ -112,14 +110,13 @@ function getStatusBadgeClass($status) {
             $equipment_name = 'N/A';
             $rental_period = 'N/A';
             if ($booking['service_type'] == 'equipment_rental' && !empty($booking['equipment_details'])) {
-                // Ensure 'equipment_name' is the correct key if your JSON structure differs
                 $eq_names = array_column($booking['equipment_details'], 'equipment_name');
                 $equipment_name = htmlspecialchars(implode(', ', $eq_names));
                 $rental_period = htmlspecialchars((new DateTime($booking['start_date']))->format('Y-m-d') . ' to ' . (new DateTime($booking['end_date']))->format('Y-m-d'));
             } elseif ($booking['service_type'] == 'junk_removal' && !empty($booking['junk_details']['junkItems'])) {
                 $junk_items_names = array_column($booking['junk_details']['junkItems'], 'itemType');
                 $equipment_name = 'Junk Removal: ' . htmlspecialchars(implode(', ', $junk_items_names));
-                $rental_period = htmlspecialchars((new DateTime($booking['start_date']))->format('Y-m-d')); // For junk removal, end_date might be same or null
+                $rental_period = htmlspecialchars((new DateTime($booking['start_date']))->format('Y-m-d'));
             }
         ?>
             <div class="bg-white p-6 rounded-lg shadow-md border border-blue-200">
@@ -131,7 +128,16 @@ function getStatusBadgeClass($status) {
                 <p class="text-gray-600 mb-2"><span class="font-medium">Equipment/Service:</span> <?php echo $equipment_name; ?></p>
                 <p class="text-gray-600 mb-2"><span class="font-medium">Date(s):</span> <?php echo $rental_period; ?></p>
                 <p class="text-gray-600 mb-4"><span class="font-medium">Location:</span> <?php echo htmlspecialchars($booking['delivery_location']); ?></p>
-                <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 show-booking-details" data-booking-id="<?php echo $booking['id']; ?>" data-status="<?php echo htmlspecialchars($booking['status']); ?>">View Details</button>
+                <div class="flex items-center space-x-4">
+                    <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 show-booking-details" data-booking-id="<?php echo $booking['id']; ?>">View Details</button>
+                    <?php if ($booking['status'] === 'completed' && $booking['review_count'] == 0): ?>
+                        <button class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors duration-200 leave-review-btn" data-booking-id="<?php echo $booking['id']; ?>" data-booking-number="<?php echo htmlspecialchars($booking['booking_number']); ?>">
+                            <i class="fas fa-star mr-2"></i>Leave a Review
+                        </button>
+                    <?php elseif ($booking['status'] === 'completed' && $booking['review_count'] > 0): ?>
+                        <span class="text-green-600 font-semibold"><i class="fas fa-check-circle mr-2"></i>Review Submitted</span>
+                    <?php endif; ?>
+                </div>
             </div>
         <?php endforeach; ?>
     <?php endif; ?>
@@ -143,7 +149,6 @@ function getStatusBadgeClass($status) {
     </button>
     <?php if ($booking_detail): ?>
         <h2 class="text-2xl font-bold text-gray-800 mb-6" id="detail-booking-number">Booking Details for #<?php echo htmlspecialchars($booking_detail['booking_number']); ?></h2>
-
         <div class="mb-6 pb-6 border-b border-gray-200">
             <h3 class="text-xl font-semibold text-gray-700 mb-4 flex items-center"><i class="fas fa-info-circle mr-2 text-blue-600"></i>Booking Information</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-600">
@@ -151,29 +156,6 @@ function getStatusBadgeClass($status) {
                 <div><span class="font-medium">Booking Date:</span> <span id="detail-booking-date"><?php echo (new DateTime($booking_detail['created_at']))->format('Y-m-d'); ?></span></div>
                 <div><span class="font-medium">Service Type:</span> <?php echo htmlspecialchars(str_replace('_', ' ', $booking_detail['service_type'])); ?></div>
                 <div><span class="font-medium">Vendor:</span> <?php echo htmlspecialchars($booking_detail['vendor_name'] ?? 'Not Assigned'); ?></div>
-                <?php if ($booking_detail['service_type'] == 'equipment_rental' && !empty($booking_detail['equipment_details'])): ?>
-                    <div><span class="font-medium">Equipment:</span> <span id="detail-equipment-name"><?php echo htmlspecialchars(implode(', ', array_column($booking_detail['equipment_details'], 'equipment_name'))); ?></span></div>
-                    <div><span class="font-medium">Quantity:</span> <?php echo htmlspecialchars($booking_detail['equipment_details'][0]['quantity'] ?? '1'); ?></div>
-                    <div><span class="font-medium">Specific Needs:</span> <?php echo htmlspecialchars($booking_detail['equipment_details'][0]['specific_needs'] ?? 'N/A'); ?></div>
-                    <div><span class="font-medium">Rental Period:</span> <span id="detail-rental-period"><?php echo (new DateTime($booking_detail['start_date']))->format('Y-m-d') . ' to ' . (new DateTime($booking_detail['end_date']))->format('Y-m-d'); ?></span></div>
-                <?php elseif ($booking_detail['service_type'] == 'junk_removal' && !empty($booking_detail['junk_details'])): ?>
-                     <div><span class="font-medium">Junk Items:</span> <?php echo htmlspecialchars(implode(', ', array_column($booking_detail['junk_details']['junkItems'] ?? [], 'itemType'))); ?></div>
-                     <div><span class="font-medium">Recommended Dumpster:</span> <?php echo htmlspecialchars($booking_detail['junk_details']['recommendedDumpsterSize'] ?? 'N/A'); ?></div>
-                     <div><span class="font-medium">Additional Comment:</span> <?php echo htmlspecialchars($booking_detail['junk_details']['additionalComment'] ?? 'N/A'); ?></div>
-                     <div><span class="font-medium">Removal Date:</span> <?php echo (new DateTime($booking_detail['start_date']))->format('Y-m-d'); ?></div>
-                <?php endif; ?>
-                <div class="md:col-span-2"><span class="font-medium">Delivery Location:</span> <span id="detail-delivery-location"><?php echo htmlspecialchars($booking_detail['delivery_location']); ?></span></div>
-                <?php if (!empty($booking_detail['delivery_instructions'])): ?>
-                    <div class="md:col-span-2"><span class="font-medium">Delivery Instructions:</span> <?php echo htmlspecialchars($booking_detail['delivery_instructions']); ?></div>
-                <?php endif; ?>
-                <?php if (!empty($booking_detail['pickup_location'])): ?>
-                    <div class="md:col-span-2"><span class="font-medium">Pickup Location:</span> <?php echo htmlspecialchars($booking_detail['pickup_location']); ?></div>
-                <?php endif; ?>
-                <?php if (!empty($booking_detail['pickup_instructions'])): ?>
-                    <div class="md:col-span-2"><span class="font-medium">Pickup Instructions:</span> <?php echo htmlspecialchars($booking_detail['pickup_instructions']); ?></div>
-                <?php endif; ?>
-                <div><span class="font-medium">Live Load Requested:</span> <?php echo $booking_detail['live_load_requested'] ? 'Yes' : 'No'; ?></div>
-                <div><span class="font-medium">Urgent Request:</span> <?php echo $booking_detail['is_urgent'] ? 'Yes' : 'No'; ?></div>
             </div>
         </div>
 
@@ -187,139 +169,111 @@ function getStatusBadgeClass($status) {
                 <div class="flex justify-between"><span class="font-medium">Payment Status:</span> <span class="<?php echo getStatusBadgeClass($booking_detail['invoice_status']); ?> font-semibold" id="detail-payment-status"><?php echo htmlspecialchars(strtoupper(str_replace('_', ' ', $booking_detail['invoice_status']))); ?></span></div>
             </div>
         </div>
-
-        <div class="mb-6 pb-6 border-b border-gray-200">
-            <h3 class="text-xl font-semibold text-gray-700 mb-4 flex items-center"><i class="fas fa-clock mr-2 text-yellow-600"></i>Status Timeline</h3>
-            <ol class="relative border-l border-gray-200 ml-4">
-                <?php
-                // Define the full sequence of possible statuses for a more comprehensive timeline
-                $full_timeline_sequence = [
-                    'pending' => 'Booking request received and awaiting processing.',
-                    'scheduled' => 'Service scheduled with vendor/driver.',
-                    'assigned' => 'Your booking has been assigned to a driver.',
-                    'pickedup' => 'Equipment has been picked up by the driver.',
-                    'out_for_delivery' => 'Your equipment is now out for delivery.',
-                    'delivered' => 'Equipment successfully delivered.',
-                    'in_use' => 'Equipment is currently in use at your site.',
-                    'awaiting_pickup' => 'Pickup requested and awaiting vendor confirmation.',
-                    'completed' => 'Service completed and equipment picked up.',
-                    'cancelled' => 'Booking cancelled.',
-                    'delayed' => 'Delivery/service delayed. Please check for updates.',
-                    'relocated' => 'Equipment has been relocated to new address.',
-                    'swapped' => 'Equipment has been swapped for a new unit.'
-                ];
-
-                $current_status_index = array_search($booking_detail['status'], array_keys($full_timeline_sequence));
-
-                foreach ($full_timeline_sequence as $key => $description) {
-                    // Only show statuses up to and including the current one, or if it's 'pending' always show
-                    // In a real system, you'd fetch actual timestamps for each status from a `booking_history` table.
-                    // For this demo, we'll just show up to the current status and use booking creation time.
-                    if (array_search($key, array_keys($full_timeline_sequence)) <= $current_status_index || $key == 'pending') :
-                        $is_current_status = ($key == $booking_detail['status']);
-                        $event_date_time = (new DateTime($booking_detail['created_at']))->format('M d, Y, h:i A'); // Using booking creation date for simplicity
-                ?>
-                        <li class="mb-5 ml-6">
-                            <span class="absolute flex items-center justify-center w-6 h-6 bg-blue-100 rounded-full -left-3 ring-8 ring-white">
-                                <i class="fas fa-check text-blue-500 text-sm"></i>
-                            </span>
-                            <h4 class="flex items-center mb-1 text-lg font-semibold text-gray-800">
-                                <?php echo htmlspecialchars(strtoupper(str_replace('_', ' ', $key))); ?>
-                                <?php echo $is_current_status ? '<span class="bg-blue-100 text-blue-800 text-sm font-medium mr-2 px-2.5 py-0.5 rounded ml-3">Current</span>' : ''; ?>
-                            </h4>
-                            <time class="block mb-2 text-sm font-normal leading-none text-gray-500">
-                                <?php echo $event_date_time; ?>
-                            </time>
-                            <p class="text-base font-normal text-gray-600"><?php echo htmlspecialchars($description); ?></p>
-                        </li>
-                <?php
-                    endif;
-                }
-                ?>
-            </ol>
-        </div>
-
-        <div class="space-y-4">
-            <h3 class="text-xl font-semibold text-gray-700 mb-4 flex items-center"><i class="fas fa-cogs mr-2 text-purple-600"></i>Additional Features</h3>
-            <?php
-            $show_driver_features = in_array($booking_detail['status'], ['out_for_delivery', 'scheduled', 'assigned', 'pickedup']);
-            $show_post_delivery_features = in_array($booking_detail['status'], ['delivered', 'in_use']);
-            ?>
-            <div class="flex items-center justify-between p-4 bg-blue-50 rounded-lg shadow-sm border border-blue-200 <?php echo $show_driver_features ? '' : 'hidden'; ?>" id="driver-tracking-card">
-                <p class="text-gray-600 font-medium">Driver Live Location:</p>
-                <a href="#" class="text-blue-600 hover:underline"><i class="fas fa-map-marker-alt mr-2"></i>Track Driver</a>
-            </div>
-            <div class="flex items-center justify-between p-4 bg-blue-50 rounded-lg shadow-sm border border-blue-200 <?php echo $show_driver_features ? '' : 'hidden'; ?>" id="contact-driver-card">
-                <p class="text-gray-600 font-medium">Contact Driver:</p>
-                <div class="flex space-x-3">
-                    <button class="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors duration-200 text-sm">
-                        <i class="fas fa-phone mr-1"></i> Call
-                    </button>
-                    <button class="px-3 py-1 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors duration-200 text-sm">
-                        <i class="fas fa-comment-dots mr-1"></i> Chat
-                    </button>
-                </div>
-            </div>
-            <div class="flex items-center justify-between p-4 bg-blue-50 rounded-lg shadow-sm border border-blue-200 <?php echo ($show_driver_features || $show_post_delivery_features) ? '' : 'hidden'; ?>">
-                <p class="text-gray-600 font-medium">Delivery Photo Uploads:</p>
-                <a href="#" class="text-blue-600 hover:underline"><i class="fas fa-images mr-2"></i>View Photos (<?php echo rand(0,3); ?>)</a>
-            </div>
-            <?php // Example of additional invoices related to THIS booking (e.g. cleaning fees, late fees) ?>
-            <div class="p-4 bg-blue-50 rounded-lg shadow-sm border border-blue-200">
-                <p class="text-gray-600 font-medium mb-2">Additional Invoices for Services:</p>
-                <ul class="list-disc list-inside text-gray-600 ml-4">
-                    <li><a href="#" class="text-blue-600 hover:underline" onclick="loadCustomerSection('invoices', {invoice_id: 'INV-00987'}); return false;">Invoice #INV-00987 (Cleaning) - $50.00</a></li>
-                    <li><a href="#" class="text-blue-600 hover:underline" onclick="loadCustomerSection('invoices', {invoice_id: 'INV-00988'}); return false;">Invoice #INV-00988 (Late Return Fee) - $75.00</a></li>
-                    <?php if ($booking_detail['invoice_status'] == 'partially_paid'): ?>
-                        <li><span class="text-orange-600">Outstanding Balance: $<?php echo number_format($booking_detail['invoice_amount'] - 50.00, 2); ?></span></li>
-                    <?php endif; ?>
-                </ul>
-            </div>
-        </div>
-
-        <div id="booking-service-requests" class="space-y-4 mt-6">
-            <h3 class="text-xl font-semibold text-gray-700 mb-4 flex items-center"><i class="fas fa-tools mr-2 text-orange-600"></i>Service Requests for this Booking</h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <button id="request-relocation-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200 shadow-md <?php echo $show_post_delivery_features ? '' : 'hidden'; ?>" onclick="showModal('relocation-request-modal')">
-                    <i class="fas fa-truck-moving mr-2"></i>Request Relocation
-                </button>
-                <button id="request-swap-btn" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200 shadow-md <?php echo $show_post_delivery_features ? '' : 'hidden'; ?>" onclick="showModal('swap-request-modal')">
-                    <i class="fas fa-sync-alt mr-2"></i>Request Swap
-                </button>
-                <button id="schedule-pickup-btn" class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors duration-200 shadow-md <?php echo $show_post_delivery_features ? '' : 'hidden'; ?>" onclick="showModal('pickup-request-modal')">
-                    <i class="fas fa-box-open mr-2"></i>Schedule Pickup
-                </button>
-            </div>
-            <?php if (!$show_post_delivery_features): ?>
-                <p id="booking-service-unavailable-msg" class="text-red-500 text-sm mt-2">These services are available once the equipment has been delivered and is in use.</p>
-            <?php endif; ?>
-        </div>
-    <?php else: // No booking found for detail view ?>
+    <?php else: ?>
         <p class="text-center text-gray-600">Booking details not found or invalid booking ID.</p>
     <?php endif; ?>
 </div>
 
-<script>
-    // This script runs when the bookings.php content is loaded into the main-content-area
-    // It attaches event listeners for the "View Details" buttons.
+<div id="review-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-lg text-gray-800">
+        <h3 class="text-xl font-bold mb-4">Leave a Review for Booking #<span id="review-booking-number"></span></h3>
+        <form id="review-form">
+            <input type="hidden" id="review-booking-id" name="booking_id">
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Your Rating</label>
+                <div class="flex items-center text-3xl text-gray-300" id="star-rating">
+                    <i class="fas fa-star cursor-pointer" data-rating="1"></i>
+                    <i class="fas fa-star cursor-pointer" data-rating="2"></i>
+                    <i class="fas fa-star cursor-pointer" data-rating="3"></i>
+                    <i class="fas fa-star cursor-pointer" data-rating="4"></i>
+                    <i class="fas fa-star cursor-pointer" data-rating="5"></i>
+                </div>
+                <input type="hidden" id="rating-value" name="rating" required>
+            </div>
+            <div class="mb-6">
+                <label for="review-text" class="block text-sm font-medium text-gray-700 mb-2">Your Review (Optional)</label>
+                <textarea id="review-text" name="review_text" rows="5" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Tell us about your experience..."></textarea>
+            </div>
+            <div class="flex justify-end space-x-4">
+                <button type="button" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('review-modal')">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">Submit Review</button>
+            </div>
+        </form>
+    </div>
+</div>
 
+<script>
     document.querySelectorAll('.show-booking-details').forEach(button => {
         button.addEventListener('click', function() {
             const bookingId = this.dataset.bookingId;
-            // Use loadCustomerSection function to load this page again with a booking_id parameter
-            // Assuming 'loadCustomerSection' is a global function for your customer dashboard
             window.loadCustomerSection('bookings', { booking_id: bookingId });
         });
     });
-
-    // This function is called by the "Back to Bookings" button.
-    // It clears the booking_id parameter and reloads the bookings list.
+    
     function hideBookingDetails() {
-        // Assuming 'loadCustomerSection' is a global function for your customer dashboard
-        window.loadCustomerSection('bookings'); // Loads the bookings page without a specific ID, showing the list
+        window.loadCustomerSection('bookings');
     }
 
-    // Since `showModal` (and possibly other modal/toast functions)
-    // are assumed to be global functions from your main layout or shared JS,
-    // they are not redefined here.
+    // --- Review Modal Logic ---
+    document.querySelectorAll('.leave-review-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const bookingId = this.dataset.bookingId;
+            const bookingNumber = this.dataset.bookingNumber;
+            document.getElementById('review-booking-id').value = bookingId;
+            document.getElementById('review-booking-number').textContent = bookingNumber;
+            // Reset form
+            document.getElementById('review-form').reset();
+            document.getElementById('rating-value').value = '';
+            document.querySelectorAll('#star-rating i').forEach(star => {
+                star.classList.remove('text-yellow-400');
+                star.classList.add('text-gray-300');
+            });
+            showModal('review-modal');
+        });
+    });
+
+    const stars = document.querySelectorAll('#star-rating i');
+    stars.forEach(star => {
+        star.addEventListener('click', function() {
+            const rating = this.dataset.rating;
+            document.getElementById('rating-value').value = rating;
+            stars.forEach(s => {
+                s.classList.toggle('text-yellow-400', s.dataset.rating <= rating);
+                s.classList.toggle('text-gray-300', s.dataset.rating > rating);
+            });
+        });
+    });
+
+    document.getElementById('review-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const rating = document.getElementById('rating-value').value;
+        if (!rating) {
+            showToast('Please select a star rating.', 'error');
+            return;
+        }
+
+        const formData = new FormData(this);
+        showToast('Submitting your review...', 'info');
+
+        try {
+            const response = await fetch('/api/customer/reviews.php', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                showToast('Thank you! Your review has been submitted.', 'success');
+                hideModal('review-modal');
+                // Reload the bookings section to update the button state
+                window.loadCustomerSection('bookings');
+            } else {
+                showToast(result.message || 'Failed to submit review.', 'error');
+            }
+        } catch (error) {
+            console.error('Review submission error:', error);
+            showToast('An error occurred. Please try again.', 'error');
+        }
+    });
+
 </script>

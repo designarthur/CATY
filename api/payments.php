@@ -115,28 +115,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'process_payment') {
     $conn->begin_transaction();
 
     try {
-        // Fetch Invoice Data
-        $stmt_invoice = $conn->prepare("SELECT i.id AS invoice_id, i.quote_id, q.service_type, q.location AS delivery_location, q.delivery_date, q.removal_date, q.live_load_needed, q.is_urgent, q.driver_instructions AS delivery_instructions, qed.duration_days, jrd.junk_items_json, jrd.recommended_dumpster_size, jrd.additional_comment, jrd.media_urls_json, qed.equipment_name, qed.quantity FROM invoices i LEFT JOIN quotes q ON i.quote_id = q.id LEFT JOIN quote_equipment_details qed ON q.id = qed.quote_id LEFT JOIN junk_removal_details jrd ON q.id = jrd.quote_id WHERE i.invoice_number = ? AND i.user_id = ? AND i.status IN ('pending', 'partially_paid')");
+        // 1. Fetch Invoice ID
+        $stmt_invoice = $conn->prepare("SELECT id FROM invoices WHERE invoice_number = ? AND user_id = ? AND status IN ('pending', 'partially_paid')");
         $stmt_invoice->bind_param("si", $invoiceNumber, $user_id);
         $stmt_invoice->execute();
-        $invoice_data = $stmt_invoice->get_result()->fetch_assoc();
-        $stmt_invoice->close();
-        if (!$invoice_data) {
+        $result_invoice = $stmt_invoice->get_result();
+        if ($result_invoice->num_rows === 0) {
             throw new Exception("Invoice not found, already paid, or not authorized.");
         }
-        $invoice_id = $invoice_data['invoice_id'];
-        $quote_id = $invoice_data['quote_id'];
-
+        $invoice_id = $result_invoice->fetch_assoc()['id'];
+        $stmt_invoice->close();
+        
+        // 2. Save new payment method if requested.
         if (empty($paymentMethodToken) && $saveNewCard) {
             $newlyCreatedToken = saveNewPaymentMethod($conn, $user_id);
             $paymentMethodToken = $newlyCreatedToken;
         }
 
-        // Process Transaction
+        // 3. Process Transaction with Braintree
         $saleRequest = ['amount' => (string)$amountToPay, 'options' => ['submitForSettlement' => true]];
         if (!empty($paymentMethodToken)) {
             $saleRequest['paymentMethodToken'] = $paymentMethodToken;
         } else {
+            // This is a placeholder for a real implementation.
+            // In production, the Braintree JS SDK on your frontend would generate a one-time-use nonce.
+            // You would pass that nonce here instead of the fake one.
             $saleRequest['paymentMethodNonce'] = 'fake-valid-nonce';
         }
         
@@ -146,39 +149,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'process_payment') {
         }
         $transaction_id = $result->transaction->id;
 
-        // Update Invoice
+        // 4. Update Invoice Status
         $stmt_update_invoice = $conn->prepare("UPDATE invoices SET status = 'paid', payment_method = ?, transaction_id = ? WHERE id = ?");
         $cardUsedDisplay = !empty($paymentMethodToken) ? "Saved Card" : "New Card";
         $stmt_update_invoice->bind_param("ssi", $cardUsedDisplay, $transaction_id, $invoice_id);
         if (!$stmt_update_invoice->execute()) throw new Exception("Failed to update invoice status.");
         $stmt_update_invoice->close();
-
-        // Update Quote
-        if ($quote_id) {
-            $stmt_update_quote = $conn->prepare("UPDATE quotes SET status = 'converted_to_booking' WHERE id = ?");
-            $stmt_update_quote->bind_param("i", $quote_id);
-            if (!$stmt_update_quote->execute()) throw new Exception("Failed to update quote status.");
-            $stmt_update_quote->close();
+        
+        // 5. Create the booking using the centralized function
+        $booking_id = createBookingFromInvoice($conn, $invoice_id);
+        if (!$booking_id) {
+            throw new Exception("Booking could not be created.");
         }
 
-        // Create Booking
-        $booking_number = 'BK-' . str_pad($invoice_id, 6, '0', STR_PAD_LEFT);
-        $service_type = $invoice_data['service_type'];
-        $delivery_location = $invoice_data['delivery_location'];
-        $start_date = $invoice_data['delivery_date'] ?? $invoice_data['removal_date'];
-        $end_date = ($service_type == 'equipment_rental' && $start_date) ? (new DateTime($start_date))->modify("+".($invoice_data['duration_days'] ?? 7)." days")->format('Y-m-d') : $start_date;
-        $equipment_details_json = ($service_type == 'equipment_rental') ? json_encode([['equipment_name' => $invoice_data['equipment_name'], 'quantity' => $invoice_data['quantity'], 'specific_needs' => $invoice_data['specific_needs'] ?? null, 'duration_days' => $invoice_data['duration_days']]]) : null;
-        $junk_details_json = ($service_type == 'junk_removal') ? json_encode(['junkItems' => json_decode($invoice_data['junk_items_json'] ?? '[]', true), 'recommendedDumpsterSize' => $invoice_data['recommended_dumpster_size'], 'additionalComment' => $invoice_data['additional_comment'], 'mediaUrls' => json_decode($invoice_data['media_urls_json'] ?? '[]', true)]) : null;
-        $live_load_requested = (int)($invoice_data['live_load_needed'] ?? 0);
-        $is_urgent = (int)($invoice_data['is_urgent'] ?? 0);
-        $driver_instructions = $invoice_data['delivery_instructions'];
-        
-        $stmt_create_booking = $conn->prepare("INSERT INTO bookings (invoice_id, user_id, booking_number, service_type, status, start_date, end_date, delivery_location, delivery_instructions, live_load_requested, is_urgent, total_price, equipment_details, junk_details) VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt_create_booking->bind_param("iissssssiiidss", $invoice_id, $user_id, $booking_number, $service_type, $start_date, $end_date, $delivery_location, $driver_instructions, $live_load_requested, $is_urgent, $amountToPay, $equipment_details_json, $junk_details_json);
-        if (!$stmt_create_booking->execute()) throw new Exception("Failed to create booking.");
-        $booking_id = $stmt_create_booking->insert_id;
-        $stmt_create_booking->close();
-        
         $conn->commit();
         echo json_encode([
             'success' => true,
@@ -196,3 +179,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'process_payment') {
 } else {
     echo json_encode(['success' => false, 'message' => 'Invalid request or action.']);
 }
+
+$conn->close();
+?>
