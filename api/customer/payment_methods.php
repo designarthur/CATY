@@ -1,6 +1,12 @@
 <?php
 // api/customer/payment_methods.php
 
+// Production-safe error reporting for API endpoint
+ini_set('display_errors', 0); // DO NOT display errors in production API responses
+ini_set('display_startup_errors', 0); // DO NOT display errors in production API responses
+error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_STRICT); // Log all, but don't output notices/deprecations
+
+
 // Start session and include necessary files
 session_start();
 require_once __DIR__ . '/../../includes/db.php';
