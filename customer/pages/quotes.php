@@ -6,18 +6,21 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/session.php'; // For has_role and user_id
+require_once __DIR__ . '/../../includes/session.php';
+require_once __DIR__ . '/../../includes/functions.php'; // Needed for CSRF
 
 if (!is_logged_in() || !has_role('customer')) {
     echo '<div class="text-red-500 text-center p-8">Unauthorized access.</div>';
     exit;
 }
 
+generate_csrf_token();
+$csrf_token = $_SESSION['csrf_token'];
+
 $user_id = $_SESSION['user_id'];
 $quotes = [];
-$expanded_quote_id = $_GET['quote_id'] ?? null; // For direct linking/expanding a specific quote
+$expanded_quote_id = $_GET['quote_id'] ?? null;
 
-// Fetch quotes for the logged-in customer
 $query = "SELECT
             q.id, q.service_type, q.status, q.created_at, q.location, q.quoted_price, q.admin_notes, q.customer_type,
             q.delivery_date, q.delivery_time, q.removal_date, q.removal_time, q.live_load_needed, q.is_urgent, q.driver_instructions,
@@ -39,7 +42,6 @@ $stmt->execute();
 $result = $stmt->get_result();
 
 while ($row = $result->fetch_assoc()) {
-    // Safely decode JSON fields, defaulting to empty array/object if NULL
     $row['junk_items_json'] = json_decode($row['junk_items_json'] ?? '[]', true);
     $row['media_urls_json'] = json_decode($row['media_urls_json'] ?? '[]', true);
     $quotes[] = $row;
@@ -47,7 +49,6 @@ while ($row = $result->fetch_assoc()) {
 $stmt->close();
 $conn->close();
 
-// Helper function for status badges
 function getCustomerStatusBadgeClass($status) {
     switch ($status) {
         case 'pending': return 'bg-yellow-100 text-yellow-800';
@@ -120,6 +121,7 @@ function getCustomerStatusBadgeClass($status) {
                                         <h4 class="text-md font-semibold text-gray-700 mb-2">Equipment Details:</h4>
                                         <p class="text-sm text-gray-700"><span class="font-medium">Equipment Name:</span> <?php echo htmlspecialchars($quote['equipment_name'] ?? 'N/A'); ?></p>
                                         <p class="text-sm text-gray-700"><span class="font-medium">Quantity:</span> <?php echo htmlspecialchars($quote['quantity'] ?? 'N/A'); ?></p>
+                                        <p class="text-sm text-gray-700"><span class="font-medium">Rental Period:</span> <?php echo isset($quote['duration_days']) ? htmlspecialchars($quote['duration_days']) . ' days' : 'N/A'; ?></p>
                                         <p class="text-sm text-gray-700"><span class="font-medium">Specific Needs:</span> <?php echo htmlspecialchars($quote['specific_needs'] ?? 'N/A'); ?></p>
                                     <?php elseif ($quote['service_type'] === 'junk_removal'): ?>
                                         <h4 class="text-md font-semibold text-gray-700 mb-2">Junk Removal Details:</h4>
@@ -216,26 +218,17 @@ function getCustomerStatusBadgeClass($status) {
 </div>
 
 <script>
-    // Function to show/hide modal (assuming you have a global hideModal function or adapt this)
-    // These functions are already globally defined in customer/dashboard.php, so just use them directly.
-    // function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
-    // function hideModal(id) { document.getElementById(id).classList.add('hidden'); }
-
-    // Function to show the image modal
     function showImageModal(imageUrl) {
         document.getElementById('image-modal-content').src = imageUrl;
-        window.showModal('image-modal'); // Use window.showModal
+        window.showModal('image-modal');
     }
 
-    // Handle "View Request" button click to toggle details
-    // Removed DOMContentLoaded wrapper as this script will be re-executed when loaded by AJAX.
     document.querySelectorAll('.view-quote-request-btn').forEach(button => {
         button.addEventListener('click', function() {
             const quoteId = this.dataset.id;
             const detailsRow = document.getElementById(`quote-details-${quoteId}`);
             detailsRow.classList.toggle('hidden');
 
-            // Optional: Change button text/icon based on state
             if (detailsRow.classList.contains('hidden')) {
                 this.innerHTML = '<i class="fas fa-eye mr-1"></i>View Request';
             } else {
@@ -244,17 +237,13 @@ function getCustomerStatusBadgeClass($status) {
         });
     });
 
-    // If a quote_id is present in the URL, expand that specific quote
-    // This logic runs when the page is loaded (via AJAX or directly)
     const urlParams = new URLSearchParams(window.location.search);
     const initialQuoteId = urlParams.get('quote_id');
     if (initialQuoteId) {
         const initialDetailsRow = document.getElementById(`quote-details-${initialQuoteId}`);
         if (initialDetailsRow) {
             initialDetailsRow.classList.remove('hidden');
-            // Scroll to the quote
             initialDetailsRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            // Update button text
             const viewButton = document.querySelector(`.view-quote-request-btn[data-id="${initialQuoteId}"]`);
             if (viewButton) {
                 viewButton.innerHTML = '<i class="fas fa-eye-slash mr-1"></i>Hide Details';
@@ -262,24 +251,24 @@ function getCustomerStatusBadgeClass($status) {
         }
     }
 
+    const csrfToken = '<?php echo $csrf_token; ?>';
 
-    // Handle "Accept Quote" button click
     document.querySelectorAll('.accept-quote-btn').forEach(button => {
         button.addEventListener('click', function() {
             const quoteId = this.dataset.id;
             const quotedPrice = this.dataset.price;
 
-            // Assuming showConfirmationModal and showToast are global functions from your main layout
             if (typeof window.showConfirmationModal === 'function' && typeof window.showToast === 'function') {
-                window.showConfirmationModal( // Use window.showConfirmationModal
+                window.showConfirmationModal(
                     'Accept Quote',
                     `Are you sure you want to accept this quote for $${parseFloat(quotedPrice).toFixed(2)}? This will proceed to payment.`,
                     async (confirmed) => {
                         if (confirmed) {
-                            window.showToast('Accepting quote...', 'info'); // Use window.showToast
+                            window.showToast('Accepting quote...', 'info');
                             const formData = new FormData();
                             formData.append('action', 'accept_quote');
                             formData.append('quote_id', quoteId);
+                            formData.append('csrf_token', csrfToken);
 
                             try {
                                 const response = await fetch('/api/customer/quotes.php', {
@@ -289,20 +278,18 @@ function getCustomerStatusBadgeClass($status) {
                                 const result = await response.json();
 
                                 if (result.success) {
-                                    window.showToast(result.message, 'success'); // Use window.showToast
-                                    // On successful acceptance, redirect to the invoice payment page
+                                    window.showToast(result.message, 'success');
                                     if (result.invoice_id) {
-                                        window.loadCustomerSection('invoices', { invoice_id: result.invoice_id }); // Redirect to invoice
+                                        window.loadCustomerSection('invoices', { invoice_id: result.invoice_id });
                                     } else {
-                                        // Fallback if no invoice_id, just reload quotes to show updated status
                                         window.loadCustomerSection('quotes', { quote_id: quoteId });
                                     }
                                 } else {
-                                    window.showToast(result.message, 'error'); // Use window.showToast
+                                    window.showToast(result.message, 'error');
                                 }
                             } catch (error) {
                                 console.error('Accept quote API Error:', error);
-                                window.showToast('An error occurred. Please try again.', 'error'); // Use window.showToast
+                                window.showToast('An error occurred. Please try again.', 'error');
                             }
                         }
                     },
@@ -310,27 +297,27 @@ function getCustomerStatusBadgeClass($status) {
                     'bg-green-600'
                 );
             } else {
-                console.error('showConfirmationModal or showToast not found. Ensure includes/modals.php or similar is loaded.');
-                alert('Accepting quote functionality is not fully loaded. Please check console for errors.');
+                console.error('showConfirmationModal or showToast not found.');
+                alert('Functionality not fully loaded. Please check console.');
             }
         });
     });
 
-    // Handle "Reject Quote" button click
     document.querySelectorAll('.reject-quote-btn').forEach(button => {
         button.addEventListener('click', function() {
             const quoteId = this.dataset.id;
 
             if (typeof window.showConfirmationModal === 'function' && typeof window.showToast === 'function') {
-                window.showConfirmationModal( // Use window.showConfirmationModal
+                window.showConfirmationModal(
                     'Reject Quote',
                     'Are you sure you want to reject this quote? This action cannot be undone.',
                     async (confirmed) => {
                         if (confirmed) {
-                            window.showToast('Rejecting quote...', 'info'); // Use window.showToast
+                            window.showToast('Rejecting quote...', 'info');
                             const formData = new FormData();
                             formData.append('action', 'reject_quote');
                             formData.append('quote_id', quoteId);
+                            formData.append('csrf_token', csrfToken);
 
                             try {
                                 const response = await fetch('/api/customer/quotes.php', {
@@ -340,14 +327,14 @@ function getCustomerStatusBadgeClass($status) {
                                 const result = await response.json();
 
                                 if (result.success) {
-                                    window.showToast(result.message, 'success'); // Use window.showToast
-                                    window.loadCustomerSection('quotes', { quote_id: quoteId }); // Reload to show updated status
+                                    window.showToast(result.message, 'success');
+                                    window.loadCustomerSection('quotes', { quote_id: quoteId });
                                 } else {
-                                    window.showToast(result.message, 'error'); // Use window.showToast
+                                    window.showToast(result.message, 'error');
                                 }
                             } catch (error) {
                                 console.error('Reject quote API Error:', error);
-                                window.showToast('An error occurred. Please try again.', 'error'); // Use window.showToast
+                                window.showToast('An error occurred. Please try again.', 'error');
                             }
                         }
                     },
@@ -355,8 +342,8 @@ function getCustomerStatusBadgeClass($status) {
                     'bg-red-600'
                 );
             } else {
-                console.error('showConfirmationModal or showToast not found. Ensure includes/modals.php or similar is loaded.');
-                alert('Rejecting quote functionality is not fully loaded. Please check console for errors.');
+                console.error('showConfirmationModal or showToast not found.');
+                alert('Functionality not fully loaded. Please check console.');
             }
         });
     });

@@ -14,6 +14,9 @@ $companyName = $companyName ?? 'CAT Dump'; // Fallback for includes
         <a href="#dashboard" class="nav-link-desktop flex items-center p-3 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="dashboard">
             <i class="fas fa-tachometer-alt mr-3"></i>Dashboard
         </a>
+        <a href="#quotes" class="nav-link-desktop flex items-center p-3 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="quotes">
+            <i class="fas fa-file-invoice mr-3"></i>My Quotes
+        </a>
         <a href="#bookings" class="nav-link-desktop flex items-center p-3 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="bookings">
             <i class="fas fa-book-open mr-3"></i>Equipment Bookings
         </a>
@@ -50,6 +53,10 @@ $companyName = $companyName ?? 'CAT Dump'; // Fallback for includes
     <a href="#dashboard" class="nav-link-mobile flex flex-col items-center p-2 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="dashboard">
         <i class="fas fa-tachometer-alt text-xl mb-1"></i>
         <span class="text-xs">Dashboard</span>
+    </a>
+    <a href="#quotes" class="nav-link-mobile flex flex-col items-center p-2 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="quotes">
+        <i class="fas fa-file-invoice text-xl mb-1"></i>
+        <span class="text-xs">Quotes</span>
     </a>
     <a href="#bookings" class="nav-link-mobile flex flex-col items-center p-2 rounded-lg text-blue-200 hover:bg-blue-700 hover:text-white transition-colors duration-200" data-section="bookings">
         <i class="fas fa-book-open text-xl mb-1"></i>

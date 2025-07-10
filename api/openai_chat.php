@@ -2,10 +2,8 @@
 // api/openai_chat.php - Handles AI Chat interactions and creates quote requests.
 
 // --- Setup & Includes ---
-ini_set('display_errors', 0); // Always keep this off in production APIs
+ini_set('display_errors', 0);
 error_reporting(E_ALL);
-// You should have a central error log path in your main php.ini
-// Forcing it here for debugging purposes:
 ini_set('error_log', __DIR__ . '/../../logs/php_errors.log');
 if (!file_exists(__DIR__ . '/../../logs')) {
     mkdir(__DIR__ . '/../../logs', 0775, true);
@@ -19,7 +17,6 @@ require_once __DIR__ . '/../includes/session.php';
 
 // --- Global Exception Handler for JSON Responses ---
 set_exception_handler(function ($exception) {
-    // Log the detailed exception message for debugging.
     error_log("FATAL EXCEPTION in openai_chat.php: " . $exception->getMessage() . " in " . $exception->getFile() . " on line " . $exception->getLine());
     if (!headers_sent()) {
         header('Content-Type: application/json');
@@ -89,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt_conv->close();
     }
 
-    $messages = [['role' => 'system', 'content' => "You are a helpful and friendly AI assistant for {$companyName}. Your goal is to gather all necessary information from a customer to create a service quote. When you have ALL the required information (name, email, phone, location, service date, and all service-specific details), you MUST call the `submit_quote_request` tool."]];
+    $messages = [['role' => 'system', 'content' => "You are a helpful and friendly AI assistant for {$companyName}. Your goal is to gather all necessary information from a customer to create a service quote. Ask for customer type (Residential or Commercial) and rental duration. When you have ALL the required information (name, email, phone, location, service date, customer type, and all service-specific details), you MUST call the `submit_quote_request` tool."]];
     $stmt_fetch = $conn->prepare("SELECT role, content FROM chat_messages WHERE conversation_id = ? ORDER BY created_at ASC");
     $stmt_fetch->bind_param("i", $conversationId);
     $stmt_fetch->execute();
@@ -111,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'type' => 'object',
                     'properties' => [
                         'service_type' => ['type' => 'string', 'enum' => ['equipment_rental', 'junk_removal']],
+                        'customer_type' => ['type' => 'string', 'enum' => ['Residential', 'Commercial'], 'description' => 'The type of customer.'],
                         'customer_name' => ['type' => 'string'],
                         'customer_email' => ['type' => 'string'],
                         'customer_phone' => ['type' => 'string'],
@@ -120,10 +118,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'is_urgent' => ['type' => 'boolean'],
                         'live_load_needed' => ['type' => 'boolean'],
                         'driver_instructions' => ['type' => 'string'],
-                        'equipment_details' => ['type' => 'object'],
-                        'junk_details' => ['type' => 'object']
+                        'equipment_details' => [
+                            'type' => 'object',
+                            'description' => 'Details for an equipment rental request.',
+                            'properties' => [
+                                'equipment_name' => ['type' => 'string', 'description' => 'The name and size of the equipment, e.g., "15-yard dumpster".'],
+                                'quantity' => ['type' => 'integer', 'description' => 'The number of units required.'],
+                                'duration_days' => ['type' => 'integer', 'description' => 'The total number of days for the rental period.'],
+                                'specific_needs' => ['type' => 'string', 'description' => 'Any other specific requirements or details from the customer.']
+                            ]
+                        ],
+                        'junk_details' => [
+                            'type' => 'object',
+                            'description' => 'Details for a junk removal request.',
+                             'properties' => [
+                                'junk_items' => ['type' => 'array', 'items' => ['type' => 'string']],
+                                'additional_comment' => ['type' => 'string']
+                            ]
+                        ]
                     ],
-                    'required' => ['service_type', 'customer_name', 'customer_email', 'customer_phone', 'location', 'service_date']
+                    'required' => ['service_type', 'customer_name', 'customer_email', 'customer_phone', 'location', 'service_date', 'customer_type']
                 ]
             ]
         ]
@@ -141,10 +155,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($toolCall['name'] === 'submit_quote_request') {
             $arguments = json_decode($toolCall['arguments'], true);
 
-            // **DATABASE LOGIC STARTS HERE**
             $conn->begin_transaction();
             try {
-                // 1. Find or Create User
                 $stmt_user_check = $conn->prepare("SELECT id FROM users WHERE email = ?");
                 $stmt_user_check->bind_param("s", $arguments['customer_email']);
                 $stmt_user_check->execute();
@@ -165,27 +177,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $stmt_user_check->close();
 
-                // 2. Create the Quote
-                $stmt_quote = $conn->prepare("INSERT INTO quotes (user_id, service_type, location, delivery_date, removal_date, delivery_time, removal_time, live_load_needed, is_urgent, driver_instructions, quote_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt_quote = $conn->prepare("INSERT INTO quotes (user_id, service_type, customer_type, location, delivery_date, removal_date, delivery_time, removal_time, live_load_needed, is_urgent, driver_instructions, quote_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $details_json = json_encode($arguments);
-                // **DEFENSIVE CODING**: Use null coalescing for optional values
                 $delivery_date = $arguments['service_type'] === 'equipment_rental' ? ($arguments['service_date'] ?? null) : null;
                 $removal_date = $arguments['service_type'] === 'junk_removal' ? ($arguments['service_date'] ?? null) : null;
                 $delivery_time = $arguments['service_type'] === 'equipment_rental' ? ($arguments['service_time'] ?? null) : null;
                 $removal_time = $arguments['service_type'] === 'junk_removal' ? ($arguments['service_time'] ?? null) : null;
                 $live_load = (int)($arguments['live_load_needed'] ?? 0);
                 $is_urgent = (int)($arguments['is_urgent'] ?? 0);
+                $customer_type = $arguments['customer_type'] ?? 'Residential'; // Default to Residential
 
-                $stmt_quote->bind_param("issssssiiss", $userId, $arguments['service_type'], $arguments['location'], $delivery_date, $removal_date, $delivery_time, $removal_time, $live_load, $is_urgent, $arguments['driver_instructions'], $details_json);
+                $stmt_quote->bind_param("isssssssiiss", $userId, $arguments['service_type'], $customer_type, $arguments['location'], $delivery_date, $removal_date, $delivery_time, $removal_time, $live_load, $is_urgent, $arguments['driver_instructions'], $details_json);
                 $stmt_quote->execute();
                 $quoteId = $conn->insert_id;
                 $stmt_quote->close();
 
-                // 3. Create Quote Details (equipment or junk)
-                if ($arguments['service_type'] === 'equipment_rental' && !empty($arguments['equipment_details']['items'])) {
+                if ($arguments['service_type'] === 'equipment_rental' && !empty($arguments['equipment_details'])) {
                     $stmt_eq = $conn->prepare("INSERT INTO quote_equipment_details (quote_id, equipment_name, quantity, duration_days, specific_needs) VALUES (?, ?, ?, ?, ?)");
-                    $eq_details = $arguments['equipment_details']['items'][0];
-                    $stmt_eq->bind_param("isiss", $quoteId, $eq_details['name'], $eq_details['quantity'], $eq_details['duration_days'], $eq_details['specific_needs']);
+                    $eq_details = $arguments['equipment_details'];
+                    // Use null coalescing operator to provide defaults
+                    $equipment_name = $eq_details['equipment_name'] ?? 'N/A';
+                    $quantity = $eq_details['quantity'] ?? 1;
+                    $duration_days = $eq_details['duration_days'] ?? null;
+                    $specific_needs = $eq_details['specific_needs'] ?? null;
+                    
+                    $stmt_eq->bind_param("isiss", $quoteId, $equipment_name, $quantity, $duration_days, $specific_needs);
                     $stmt_eq->execute();
                     $stmt_eq->close();
                 }
@@ -193,18 +209,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $conn->commit();
                 $aiResponseText = "Thank you! Your quote request (#Q{$quoteId}) has been successfully submitted. Our team will review the details and send you the best price within the hour.";
                 $isInfoCollected = true;
-                unset($_SESSION['conversation_id']); // End the conversation
+                unset($_SESSION['conversation_id']);
                 
             } catch (mysqli_sql_exception $e) {
                 $conn->rollback();
-                // Log the specific SQL error for debugging
                 error_log("SQL Error during quote creation: " . $e->getMessage() . " - Arguments: " . json_encode($arguments));
                 throw new Exception("Failed to save your request to the database due to a data error.");
             }
         }
     }
 
-    // --- Save History and Return Response ---
     $stmt_save_user = $conn->prepare("INSERT INTO chat_messages (conversation_id, role, content) VALUES (?, 'user', ?)");
     $stmt_save_user->bind_param("is", $conversationId, $userMessageText);
     $stmt_save_user->execute();
@@ -219,3 +233,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     exit;
 }
+?>

@@ -86,7 +86,6 @@ function getAdminStatusBadgeClass($status) {
                                 <?php echo $quote['quoted_price'] ? '$' . number_format($quote['quoted_price'], 2) : 'N/A'; ?>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <!-- Action buttons are now correctly rendered based on status -->
                                 <?php if ($quote['status'] === 'pending'): ?>
                                     <button class="text-green-600 hover:text-green-900 submit-quote-btn" data-id="<?php echo htmlspecialchars($quote['id']); ?>">Submit Quote</button>
                                 <?php elseif ($quote['status'] === 'quoted'): ?>
@@ -106,7 +105,6 @@ function getAdminStatusBadgeClass($status) {
     <?php endif; ?>
 </div>
 
-<!-- Submit Quote Modal -->
 <div id="submit-quote-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
     <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md text-gray-800">
         <h3 class="text-xl font-bold mb-4">Submit Quote for Request #<span id="submit-quote-id"></span></h3>
@@ -126,6 +124,17 @@ function getAdminStatusBadgeClass($status) {
                     <input type="number" id="relocation-charge" name="relocation_charge" step="0.01" min="0" placeholder="e.g., 40.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
                 </div>
             </div>
+            <div class="mb-4 bg-gray-50 p-3 rounded-md border border-gray-200">
+                <p class="text-sm font-medium text-gray-700 mb-2">Included Services</p>
+                <div class="flex items-center mb-2">
+                    <input type="checkbox" id="is_swap_included" name="is_swap_included" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                    <label for="is_swap_included" class="ml-2 block text-sm text-gray-900">Include one free Swap in this quote</label>
+                </div>
+                <div class="flex items-center">
+                    <input type="checkbox" id="is_relocation_included" name="is_relocation_included" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                    <label for="is_relocation_included" class="ml-2 block text-sm text-gray-900">Include one free Relocation in this quote</label>
+                </div>
+            </div>
             <div class="mb-4">
                 <label for="admin-notes" class="block text-sm font-medium text-gray-700">Notes for Customer (Optional)</label>
                 <textarea id="admin-notes" name="admin_notes" rows="4" class="mt-1 p-2 border border-gray-300 rounded-md w-full"></textarea>
@@ -138,28 +147,22 @@ function getAdminStatusBadgeClass($status) {
     </div>
 </div>
 
-<!-- **THE FIX IS HERE**: This script block contains all the logic to make the buttons work. -->
 <script>
 (function() {
-    // This script runs when the quotes page is loaded.
-    // We use event delegation on the main content area to handle clicks.
     const contentArea = document.getElementById('main-content-area');
     if (!contentArea) return;
 
     contentArea.addEventListener('click', function(event) {
         const target = event.target;
 
-        // --- Handle "Submit Quote" button click ---
         if (target.classList.contains('submit-quote-btn')) {
             const quoteId = target.dataset.id;
             document.getElementById('submit-quote-id').textContent = quoteId;
             document.getElementById('submit-quote-hidden-id').value = quoteId;
-            // Clear previous values in the form
             document.getElementById('submit-quote-form').reset();
             showModal('submit-quote-modal');
         }
 
-        // --- Handle "Resend Quote" button click ---
         if (target.classList.contains('resend-quote-btn')) {
             const quoteId = target.dataset.id;
             showConfirmationModal(
@@ -174,7 +177,6 @@ function getAdminStatusBadgeClass($status) {
             );
         }
 
-        // --- Handle "Reject Quote" button click ---
         if (target.classList.contains('reject-quote-btn')) {
             const quoteId = target.dataset.id;
             showConfirmationModal(
@@ -189,15 +191,12 @@ function getAdminStatusBadgeClass($status) {
             );
         }
         
-        // --- Handle "View Booking" button click ---
         if (target.classList.contains('view-related-booking-btn')) {
              const quoteId = target.dataset.quoteId;
-             // This API call finds the booking associated with the quote
              fetch(`/api/admin/bookings.php?action=get_booking_by_quote_id&quote_id=${quoteId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success && data.booking_id) {
-                        // Load the bookings page, automatically showing the correct detail view
                         window.loadAdminSection('bookings', { booking_id: data.booking_id });
                     } else {
                         showToast(data.message || 'Could not find a booking for this quote.', 'error');
@@ -210,7 +209,6 @@ function getAdminStatusBadgeClass($status) {
         }
     });
 
-    // --- Handle the "Submit Quote" form's submission ---
     const submitQuoteForm = document.getElementById('submit-quote-form');
     if (submitQuoteForm) {
         submitQuoteForm.addEventListener('submit', async function(event) {
@@ -218,7 +216,6 @@ function getAdminStatusBadgeClass($status) {
             const formData = new FormData(this);
             formData.append('action', 'submit_quote');
             
-            // Basic validation
             if (!formData.get('quoted_price') || parseFloat(formData.get('quoted_price')) <= 0) {
                 showToast('Please enter a valid quoted price.', 'error');
                 return;
@@ -229,22 +226,17 @@ function getAdminStatusBadgeClass($status) {
         });
     }
 
-    /**
-     * A reusable function to send actions to the quotes API.
-     * @param {string|FormData} action - The action name or a full FormData object.
-     * @param {number|null} quoteId - The ID of the quote (if action is a string).
-     */
     async function handleQuoteAction(action, quoteId = null) {
         let formData;
         if (typeof action === 'string') {
             formData = new FormData();
             formData.append('action', action);
-            formData.append('quote_id', quoteId);
+            if(quoteId) formData.append('quote_id', quoteId);
         } else {
             formData = action;
         }
 
-        const actionText = formData.get('action').replace('_', ' ');
+        const actionText = formData.get('action').replace(/_/g, ' ');
         showToast(`Processing ${actionText}...`, 'info');
 
         try {
@@ -256,7 +248,7 @@ function getAdminStatusBadgeClass($status) {
 
             if (result.success) {
                 showToast(result.message, 'success');
-                window.loadAdminSection('quotes'); // Reload the page to see changes
+                window.loadAdminSection('quotes');
             } else {
                 showToast(result.message, 'error');
             }

@@ -53,9 +53,16 @@ if ($requested_booking_id) {
     $result_detail = $stmt_detail->get_result();
     if ($result_detail->num_rows > 0) {
         $booking_detail_view_data = $result_detail->fetch_assoc();
-        // **THE FIX for Deprecated Warning**: Use null coalescing operator '??' to provide a default empty JSON string.
         $booking_detail_view_data['equipment_details'] = json_decode($booking_detail_view_data['equipment_details'] ?? '[]', true);
         $booking_detail_view_data['junk_details'] = json_decode($booking_detail_view_data['junk_details'] ?? '{}', true);
+
+        if ($booking_detail_view_data && in_array($booking_detail_view_data['status'], ['delivered', 'in_use', 'awaiting_pickup'])) {
+            $endDate = new DateTime($booking_detail_view_data['end_date']);
+            $today = new DateTime();
+            $interval = $today->diff($endDate);
+            $remaining_days = (int)$interval->format('%r%a');
+            $booking_detail_view_data['remaining_days'] = $remaining_days;
+        }
     }
     $stmt_detail->close();
 } else {
@@ -94,7 +101,6 @@ $conn->close();
 
 // --- Helper Functions ---
 function getAdminStatusBadgeClass($status) {
-    // (This function remains the same)
     switch ($status) {
         case 'pending': return 'bg-yellow-100 text-yellow-800';
         case 'scheduled': return 'bg-blue-100 text-blue-800';
@@ -183,11 +189,18 @@ function getAdminStatusBadgeClass($status) {
                 <p class="text-gray-600"><span class="font-medium">Service Type:</span> <?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $booking_detail_view_data['service_type']))); ?></p>
                 <p class="text-gray-600"><span class="font-medium">Current Status:</span> <span class="px-2 py-1 rounded-full text-xs font-semibold <?php echo getAdminStatusBadgeClass($booking_detail_view_data['status']); ?>"><?php echo htmlspecialchars(strtoupper(str_replace('_', ' ', $booking_detail_view_data['status']))); ?></span></p>
                 <p class="text-gray-600"><span class="font-medium">Start Date:</span> <?php echo htmlspecialchars($booking_detail_view_data['start_date']); ?></p>
+                 <p class="text-gray-600"><span class="font-medium">End Date:</span> <?php echo htmlspecialchars($booking_detail_view_data['end_date']); ?>
+                    <?php if (isset($booking_detail_view_data['remaining_days'])): ?>
+                        <span class="font-bold <?php echo $booking_detail_view_data['remaining_days'] < 3 ? 'text-red-500' : 'text-green-500'; ?>">
+                            (<?php echo $booking_detail_view_data['remaining_days']; ?> days remaining)
+                        </span>
+                    <?php endif; ?>
+                 </p>
             </div>
         </div>
 
         <h3 class="text-xl font-semibold text-gray-700 mb-4">Admin Actions</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
                 <label for="booking-status-select" class="block text-sm font-medium text-gray-700 mb-2">Update Status</label>
                 <select id="booking-status-select" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
@@ -216,36 +229,72 @@ function getAdminStatusBadgeClass($status) {
                 </select>
                 <button class="mt-3 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200" id="assign-vendor-btn" data-id="<?php echo htmlspecialchars($booking_detail_view_data['id']); ?>">Assign Vendor</button>
             </div>
+            <div>
+                 <label class="block text-sm font-medium text-gray-700 mb-2">Additional Charges</label>
+                 <button class="mt-1 w-full px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors duration-200" id="add-charge-btn" data-id="<?php echo htmlspecialchars($booking_detail_view_data['id']); ?>">
+                    <i class="fas fa-plus-circle mr-2"></i>Add Charge
+                 </button>
+            </div>
         </div>
     <?php else: ?>
         <p class="text-center text-gray-600">Booking details not found or invalid ID.</p>
     <?php endif; ?>
 </div>
 
-<script>
-    // --- JavaScript for Bookings Page ---
+<div id="add-charge-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-lg text-gray-800">
+        <h3 class="text-xl font-bold mb-4">Add Additional Charge</h3>
+        <form id="add-charge-form">
+            <input type="hidden" name="booking_id" id="add-charge-booking-id">
+            <div class="mb-4">
+                <label for="charge-type" class="block text-sm font-medium text-gray-700">Charge Type</label>
+                <select id="charge-type" name="charge_type" class="mt-1 p-2 border border-gray-300 rounded-md w-full" required>
+                    <option value="">Select a type</option>
+                    <option value="tonnage_overage">Tonnage Overage</option>
+                    <option value="rental_extension">Rental Extension</option>
+                    <option value="damage_fee">Damage Fee</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label for="charge-amount" class="block text-sm font-medium text-gray-700">Amount ($)</label>
+                <input type="number" id="charge-amount" name="amount" step="0.01" min="0.01" class="mt-1 p-2 border border-gray-300 rounded-md w-full" required>
+            </div>
+            <div class="mb-4">
+                <label for="charge-description" class="block text-sm font-medium text-gray-700">Description</label>
+                <textarea id="charge-description" name="description" rows="3" class="mt-1 p-2 border border-gray-300 rounded-md w-full" placeholder="e.g., Overage: 1.5 tons @ $50/ton" required></textarea>
+            </div>
+            <div class="flex justify-end space-x-4">
+                <button type="button" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('add-charge-modal')">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">Generate Invoice</button>
+            </div>
+        </form>
+    </div>
+</div>
 
+
+<script>
     function showBookingDetails(bookingId) {
         window.loadAdminSection('bookings', { booking_id: bookingId });
     }
 
     function hideBookingDetails() {
-        // Reads the current filter from the URL to maintain state when going back
         const currentParams = new URLSearchParams(window.location.search);
         const statusFilter = currentParams.get('status') || 'all';
         window.loadAdminSection('bookings', { status: statusFilter });
     }
 
-    // Use event delegation for dynamically loaded content
     document.addEventListener('click', function(event) {
-        if (event.target.classList.contains('view-booking-details-btn')) {
-            const bookingId = event.target.dataset.id;
+        const target = event.target.closest('button');
+        if (!target) return;
+
+        if (target.classList.contains('view-booking-details-btn')) {
+            const bookingId = target.dataset.id;
             showBookingDetails(bookingId);
         }
 
-        // Handler for Update Booking Status button
-        if (event.target.id === 'update-booking-status-btn') {
-            const bookingId = event.target.dataset.id;
+        if (target.id === 'update-booking-status-btn') {
+            const bookingId = target.dataset.id;
             const statusSelect = document.getElementById('booking-status-select');
             const newStatus = statusSelect.value;
             const newStatusText = statusSelect.options[statusSelect.selectedIndex].text;
@@ -269,7 +318,6 @@ function getAdminStatusBadgeClass($status) {
                             const result = await response.json();
                             if (result.success) {
                                 showToast(result.message, 'success');
-                                // Reload the detail view to show the updated status
                                 showBookingDetails(bookingId);
                             } else {
                                 showToast('Error: ' + result.message, 'error');
@@ -285,9 +333,8 @@ function getAdminStatusBadgeClass($status) {
             );
         }
 
-        // Handler for Assign Vendor button
-        if (event.target.id === 'assign-vendor-btn') {
-            const bookingId = event.target.dataset.id;
+        if (target.id === 'assign-vendor-btn') {
+            const bookingId = target.dataset.id;
             const vendorSelect = document.getElementById('assign-vendor-select');
             const newVendorId = vendorSelect.value;
 
@@ -301,14 +348,74 @@ function getAdminStatusBadgeClass($status) {
                 'Are you sure you want to assign this vendor to the booking?',
                 async (confirmed) => {
                     if(confirmed) {
-                         // API call logic for assigning vendor
                         showToast('Assigning vendor...', 'info');
-                        // ... your fetch call to api/admin/bookings.php with 'assign_vendor' action
+                         const formData = new FormData();
+                         formData.append('action', 'assign_vendor');
+                         formData.append('booking_id', bookingId);
+                         formData.append('vendor_id', newVendorId);
+
+                         try {
+                            const response = await fetch('/api/admin/bookings.php', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            const result = await response.json();
+                            if(result.success){
+                                showToast(result.message, 'success');
+                                showBookingDetails(bookingId);
+                            } else {
+                                showToast('Error: ' + result.message, 'error');
+                            }
+                         } catch(error) {
+                            showToast('An unexpected error occurred.', 'error');
+                         }
                     }
                 },
                 'Assign Vendor',
                 'bg-green-600'
             );
         }
+
+        if (target.id === 'add-charge-btn') {
+            const bookingId = target.dataset.id;
+            document.getElementById('add-charge-booking-id').value = bookingId;
+            document.getElementById('add-charge-form').reset();
+            showModal('add-charge-modal');
+        }
     });
+
+    const addChargeForm = document.getElementById('add-charge-form');
+    if (addChargeForm) {
+        addChargeForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            formData.append('action', 'add_charge');
+
+            if (!formData.get('charge_type') || !formData.get('amount') || !formData.get('description')) {
+                showToast('All fields are required.', 'error');
+                return;
+            }
+
+            showToast('Adding charge and generating invoice...', 'info');
+
+            try {
+                const response = await fetch('/api/admin/bookings.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    hideModal('add-charge-modal');
+                    // Optionally, you could redirect to the new invoice or just reload the booking
+                    showBookingDetails(formData.get('booking_id'));
+                } else {
+                    showToast('Error: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showToast('An unexpected error occurred.', 'error');
+            }
+        });
+    }
+
 </script>

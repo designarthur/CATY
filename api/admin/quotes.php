@@ -26,17 +26,23 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $action = $_POST['action'] ?? '';
 $quoteId = filter_input(INPUT_POST, 'quote_id', FILTER_VALIDATE_INT);
 
-if (!$quoteId) {
-    http_response_code(400); // Bad Request
-    echo json_encode(['success' => false, 'message' => 'A valid Quote ID is required.']);
-    exit;
+if (!$quoteId && $action !== 'submit_quote') { // quoteId is not required for submit_quote as it's in the form
+    if (isset($_POST['quote_id'])) {
+        $quoteId = filter_input(INPUT_POST, 'quote_id', FILTER_VALIDATE_INT);
+    }
+    if(!$quoteId) {
+        http_response_code(400); // Bad Request
+        echo json_encode(['success' => false, 'message' => 'A valid Quote ID is required.']);
+        exit;
+    }
 }
+
 
 // --- Action Routing ---
 try {
     switch ($action) {
         case 'submit_quote':
-            handleSubmitQuote($conn, $quoteId);
+            handleSubmitQuote($conn, $_POST['quote_id']);
             break;
         case 'resend_quote':
             handleResendQuote($conn, $quoteId);
@@ -68,10 +74,12 @@ try {
 function handleSubmitQuote($conn, $quoteId) {
     // --- Input Validation ---
     $quotedPrice = filter_input(INPUT_POST, 'quoted_price', FILTER_VALIDATE_FLOAT);
-    // **NEW**: Get the new charge values from the form, providing a default of 0.00 if not set.
     $swapCharge = filter_input(INPUT_POST, 'swap_charge', FILTER_VALIDATE_FLOAT);
     $relocationCharge = filter_input(INPUT_POST, 'relocation_charge', FILTER_VALIDATE_FLOAT);
     $adminNotes = trim($_POST['admin_notes'] ?? '');
+    $isSwapIncluded = isset($_POST['is_swap_included']) ? 1 : 0;
+    $isRelocationIncluded = isset($_POST['is_relocation_included']) ? 1 : 0;
+
 
     // Set to 0.00 if null or empty after filtering
     $swapCharge = $swapCharge ?? 0.00;
@@ -91,9 +99,9 @@ function handleSubmitQuote($conn, $quoteId) {
     $stmt_fetch->close();
     if (!$quote_user_data) throw new Exception('User for the quote not found.');
 
-    // 1. **THE FIX**: Update the quote in the database, now including the new charge fields.
-    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, swap_charge = ?, relocation_charge = ?, admin_notes = ? WHERE id = ?");
-    $stmt_update->bind_param("dddsi", $quotedPrice, $swapCharge, $relocationCharge, $adminNotes, $quoteId);
+    // 1. Update the quote in the database, now including the new charge and inclusion fields.
+    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, swap_charge = ?, relocation_charge = ?, admin_notes = ?, is_swap_included = ?, is_relocation_included = ? WHERE id = ?");
+    $stmt_update->bind_param("dddsiii", $quotedPrice, $swapCharge, $relocationCharge, $adminNotes, $isSwapIncluded, $isRelocationIncluded, $quoteId);
     $stmt_update->execute();
     $stmt_update->close();
 

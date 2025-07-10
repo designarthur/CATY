@@ -22,26 +22,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// --- CSRF Protection ---
-// Important: Assumes you have added a CSRF token to your new modals in bookings.php
-// try {
-//     validate_csrf_token();
-// } catch (Exception $e) {
-//     http_response_code(403);
-//     echo json_encode(['success' => false, 'message' => 'Invalid security token. Please refresh the page and try again.']);
-//     exit;
-// }
-
 // --- Action Routing ---
 $action = $_POST['action'] ?? '';
 
 try {
     switch ($action) {
         case 'request_relocation':
-            handleRelocationRequest($conn);
+            handleServiceRequest($conn, 'relocation');
             break;
         case 'request_swap':
-            handleSwapRequest($conn);
+            handleServiceRequest($conn, 'swap');
             break;
         case 'schedule_pickup':
             handleSchedulePickup($conn);
@@ -62,26 +52,27 @@ try {
 
 // --- Handler Functions ---
 
-/**
- * Handles a service request that requires payment (Relocation, Swap).
- * Creates a new invoice for the service charge.
- */
-function handlePaidServiceRequest($conn, $serviceType) {
+function handleServiceRequest($conn, $serviceType) {
     $booking_id = filter_input(INPUT_POST, 'booking_id', FILTER_VALIDATE_INT);
     $user_id = $_SESSION['user_id'];
+    $new_address = trim($_POST['new_address'] ?? null);
 
     if (!$booking_id) {
         throw new Exception('A valid Booking ID is required.');
     }
+    if ($serviceType === 'relocation' && empty($new_address)) {
+        throw new Exception('A new address is required for relocation requests.');
+    }
 
     $charge_column = ($serviceType === 'relocation') ? 'relocation_charge' : 'swap_charge';
+    $included_column = ($serviceType === 'relocation') ? 'is_relocation_included' : 'is_swap_included';
     $service_name = ucwords($serviceType);
 
     $conn->begin_transaction();
 
-    // 1. Fetch the original booking and the specific charge from its quote
+    // 1. Fetch the booking, its original quote, and the specific service flags/charges
     $stmt_fetch = $conn->prepare("
-        SELECT q.{$charge_column}
+        SELECT q.{$charge_column}, q.{$included_column}
         FROM bookings b
         JOIN invoices i ON b.invoice_id = i.id
         JOIN quotes q ON i.quote_id = q.id
@@ -89,64 +80,79 @@ function handlePaidServiceRequest($conn, $serviceType) {
     ");
     $stmt_fetch->bind_param("ii", $booking_id, $user_id);
     $stmt_fetch->execute();
-    $result = $stmt_fetch->get_result()->fetch_assoc();
+    $quote_data = $stmt_fetch->get_result()->fetch_assoc();
     $stmt_fetch->close();
 
-    if (!$result) {
+    if (!$quote_data) {
         throw new Exception("Could not find the specified booking or its original quote.");
     }
 
-    $charge_amount = (float) $result[$charge_column];
+    $is_included = (bool)$quote_data[$included_column];
+    $charge_amount = (float)$quote_data[$charge_column];
+
+    // Scenario A: Service is pre-paid/included
+    if ($is_included) {
+        // Log the request and notify admin to schedule it
+        $notes = "Customer initiated pre-paid {$service_name} request.";
+        if ($serviceType === 'relocation') {
+            $notes .= " New address: {$new_address}";
+            // You might want to update the booking's delivery_location here or have admin confirm it first
+        }
+        $stmt_log = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, ?, ?)");
+        $status_log = $serviceType . '_requested'; // e.g., 'relocation_requested'
+        $stmt_log->bind_param("iss", $booking_id, $status_log, $notes);
+        $stmt_log->execute();
+        $stmt_log->close();
+
+        // Notify customer that the request is being scheduled
+        $notification_message = "Your pre-paid {$service_name} request for booking #{$booking_id} has been received and is being scheduled by our team.";
+        $notification_link = "bookings?booking_id={$booking_id}";
+        $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'booking_status_update', ?, ?)");
+        $stmt_notify->bind_param("iss", $user_id, $notification_message, $notification_link);
+        $stmt_notify->execute();
+        $stmt_notify->close();
+        
+        // TODO: Notify Admin to take action
+
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'Your pre-paid ' . $service_name . ' request has been sent for scheduling!']);
+        return;
+    }
+
+    // Scenario B: Service requires payment
     if ($charge_amount <= 0) {
         throw new Exception("This service is not available or has no charge associated with it. Please contact support.");
     }
-
-    // 2. Create a new invoice for this service request
-    $invoice_number = 'INV-' . strtoupper($serviceType) . '-' . generateToken(6);
-    $due_date = date('Y-m-d', strtotime('+3 days')); // Due in 3 days
+    
+    // Create a new invoice for this service request
+    $invoice_number = 'INV-' . strtoupper(substr($serviceType, 0, 3)) . '-' . generateToken(6);
+    $due_date = date('Y-m-d', strtotime('+3 days')); 
 
     $stmt_invoice = $conn->prepare("INSERT INTO invoices (user_id, booking_id, invoice_number, amount, status, due_date, notes) VALUES (?, ?, ?, ?, 'pending', ?, ?)");
-    $notes = "Invoice for {$service_name} Request on Booking ID {$booking_id}";
-    $stmt_invoice->bind_param("iisdss", $user_id, $booking_id, $invoice_number, $charge_amount, $due_date, $notes);
+    $invoice_notes = "Invoice for {$service_name} Request on Booking ID {$booking_id}";
+    $stmt_invoice->bind_param("iisdss", $user_id, $booking_id, $invoice_number, $charge_amount, $due_date, $invoice_notes);
     $stmt_invoice->execute();
     $new_invoice_id = $conn->insert_id;
     $stmt_invoice->close();
 
-    // 3. Create a notification for the customer
-    $notification_message = "Your {$service_name} request has been submitted. Please pay the new invoice (#{$invoice_number}) to proceed.";
-    $notification_link = "invoices?invoice_id={$new_invoice_id}"; // Link to the new invoice
+    // Create a notification for the customer
+    $notification_message = "Your {$service_name} request requires payment. Please pay invoice #{$invoice_number} to proceed.";
+    $notification_link = "invoices?invoice_id={$new_invoice_id}";
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'payment_due', ?, ?)");
     $stmt_notify->bind_param("iss", $user_id, $notification_message, $notification_link);
     $stmt_notify->execute();
     $stmt_notify->close();
 
     $conn->commit();
-
-    return ['new_invoice_id' => $new_invoice_id];
-}
-
-function handleRelocationRequest($conn) {
-    $response = handlePaidServiceRequest($conn, 'relocation');
+    
     echo json_encode([
         'success' => true,
-        'message' => 'Relocation request submitted! Please complete the payment for the new invoice.',
-        'invoice_id' => $response['new_invoice_id']
-    ]);
-}
-
-function handleSwapRequest($conn) {
-    $response = handlePaidServiceRequest($conn, 'swap');
-    echo json_encode([
-        'success' => true,
-        'message' => 'Swap request submitted! Please complete the payment for the new invoice.',
-        'invoice_id' => $response['new_invoice_id']
+        'message' => "{$service_name} request submitted! Please complete the payment for the new invoice.",
+        'invoice_id' => $new_invoice_id
     ]);
 }
 
 
-/**
- * Handles scheduling a pickup, which does not require payment.
- */
 function handleSchedulePickup($conn) {
     $booking_id = filter_input(INPUT_POST, 'booking_id', FILTER_VALIDATE_INT);
     $pickup_date = trim($_POST['pickup_date'] ?? '');
@@ -159,7 +165,6 @@ function handleSchedulePickup($conn) {
 
     $conn->begin_transaction();
 
-    // 1. Update the booking with pickup info and change status to 'awaiting_pickup'
     $stmt_update = $conn->prepare("UPDATE bookings SET pickup_date = ?, pickup_time = ?, status = 'awaiting_pickup' WHERE id = ? AND user_id = ?");
     $stmt_update->bind_param("ssii", $pickup_date, $pickup_time, $booking_id, $user_id);
     $stmt_update->execute();
@@ -169,15 +174,13 @@ function handleSchedulePickup($conn) {
     }
     $stmt_update->close();
     
-    // 2. Log this event to the history table
     $notes = "Customer scheduled pickup for {$pickup_date} at {$pickup_time}.";
     $stmt_log = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, 'awaiting_pickup', ?)");
     $stmt_log->bind_param("is", $booking_id, $notes);
     $stmt_log->execute();
     $stmt_log->close();
 
-    // 3. Create notification for the customer
-    $notification_message = "Your pickup for booking #{$booking_id} has been successfully scheduled for {$pickup_date}.";
+    $notification_message = "Your pickup for booking #{$booking_id} has been successfully scheduled for {$pickup_date}. Our team will confirm and process it.";
     $notification_link = "bookings?booking_id={$booking_id}";
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'booking_status_update', ?, ?)");
     $stmt_notify->bind_param("iss", $user_id, $notification_message, $notification_link);

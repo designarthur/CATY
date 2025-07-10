@@ -29,6 +29,9 @@ try {
             case 'assign_vendor':
                 handleAssignVendor($conn);
                 break;
+            case 'add_charge':
+                handleAddCharge($conn);
+                break;
             default:
                 throw new Exception('Invalid POST action specified.');
         }
@@ -58,9 +61,6 @@ try {
 
 // --- Handler Functions ---
 
-/**
- * Handles updating the status of a booking and logs the event.
- */
 function handleUpdateStatus($conn) {
     $booking_id = filter_input(INPUT_POST, 'booking_id', FILTER_VALIDATE_INT);
     $newStatus = trim($_POST['status'] ?? '');
@@ -70,7 +70,6 @@ function handleUpdateStatus($conn) {
         throw new Exception('Booking ID and new status are required.');
     }
 
-    // This list MUST match the ENUM in your database and the dropdown in the admin panel.
     $allowedStatuses = [
         'pending', 'scheduled', 'assigned', 'pickedup', 'out_for_delivery',
         'delivered', 'in_use', 'awaiting_pickup', 'completed', 'cancelled',
@@ -82,7 +81,6 @@ function handleUpdateStatus($conn) {
 
     $conn->begin_transaction();
 
-    // Fetch booking details for notification
     $stmt_fetch = $conn->prepare("SELECT b.booking_number, b.status AS old_status, u.id as user_id, u.first_name, u.email FROM bookings b JOIN users u ON b.user_id = u.id WHERE b.id = ?");
     $stmt_fetch->bind_param("i", $booking_id);
     $stmt_fetch->execute();
@@ -98,7 +96,6 @@ function handleUpdateStatus($conn) {
         return;
     }
 
-    // 1. Update the booking status in the main `bookings` table
     $stmt_update = $conn->prepare("UPDATE bookings SET status = ? WHERE id = ?");
     $stmt_update->bind_param("si", $newStatus, $booking_id);
     if (!$stmt_update->execute()) {
@@ -106,7 +103,6 @@ function handleUpdateStatus($conn) {
     }
     $stmt_update->close();
 
-    // 2. **NEW**: Log this event to the `booking_status_history` table for the timeline feature.
     $stmt_log = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, ?, ?)");
     $stmt_log->bind_param("iss", $booking_id, $newStatus, $notes);
     if (!$stmt_log->execute()) {
@@ -114,8 +110,6 @@ function handleUpdateStatus($conn) {
     }
     $stmt_log->close();
 
-
-    // 3. Create a notification and send an email to the customer
     $notification_message = "Your booking #BK-{$booking_data['booking_number']} has been updated to: " . ucwords(str_replace('_', ' ', $newStatus)) . ".";
     $notification_link = "bookings?booking_id={$booking_id}";
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'booking_status_update', ?, ?)");
@@ -123,7 +117,6 @@ function handleUpdateStatus($conn) {
     $stmt_notify->execute();
     $stmt_notify->close();
 
-    // Send email
     $emailBody = "<p>Dear {$booking_data['first_name']},</p><p>The status of your booking #BK-{$booking_data['booking_number']} has been updated to: <strong>" . ucwords(str_replace('_', ' ', $newStatus)) . "</strong>.</p>";
     sendEmail($booking_data['email'], "Update on your Booking #BK-{$booking_data['booking_number']}", $emailBody);
 
@@ -132,9 +125,6 @@ function handleUpdateStatus($conn) {
 }
 
 
-/**
- * Handles assigning a vendor to a booking.
- */
 function handleAssignVendor($conn) {
     $booking_id = filter_input(INPUT_POST, 'booking_id', FILTER_VALIDATE_INT);
     $vendor_id = filter_input(INPUT_POST, 'vendor_id', FILTER_VALIDATE_INT);
@@ -145,20 +135,16 @@ function handleAssignVendor($conn) {
 
     $conn->begin_transaction();
     
-    // Update booking with vendor and set status to 'assigned'
     $stmt_update = $conn->prepare("UPDATE bookings SET vendor_id = ?, status = 'assigned' WHERE id = ?");
     $stmt_update->bind_param("ii", $vendor_id, $booking_id);
     $stmt_update->execute();
     
     if($stmt_update->affected_rows > 0) {
-        // Log the assignment event
         $notes = "Booking assigned to a vendor by admin.";
         $stmt_log = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, 'assigned', ?)");
         $stmt_log->bind_param("is", $booking_id, $notes);
         $stmt_log->execute();
         $stmt_log->close();
-
-        // You should also add logic here to notify the customer and/or the vendor.
         
         $conn->commit();
         echo json_encode(['success' => true, 'message' => 'Vendor assigned successfully and status updated.']);
@@ -169,10 +155,71 @@ function handleAssignVendor($conn) {
     $stmt_update->close();
 }
 
+function handleAddCharge($conn) {
+    $booking_id = filter_input(INPUT_POST, 'booking_id', FILTER_VALIDATE_INT);
+    $charge_type = trim($_POST['charge_type'] ?? '');
+    $amount = filter_input(INPUT_POST, 'amount', FILTER_VALIDATE_FLOAT);
+    $description = trim($_POST['description'] ?? '');
+    $admin_user_id = $_SESSION['user_id'];
 
-/**
- * Handles retrieving a booking ID from a quote ID.
- */
+    if (!$booking_id || empty($charge_type) || !$amount || $amount <= 0 || empty($description)) {
+        throw new Exception('Booking ID, charge type, a valid amount, and description are required.');
+    }
+    
+    $conn->begin_transaction();
+    
+    // 1. Fetch booking user for invoice creation
+    $stmt_user = $conn->prepare("SELECT user_id FROM bookings WHERE id = ?");
+    $stmt_user->bind_param("i", $booking_id);
+    $stmt_user->execute();
+    $user_id = $stmt_user->get_result()->fetch_assoc()['user_id'];
+    $stmt_user->close();
+
+    if(!$user_id) {
+        throw new Exception('Could not find the user associated with this booking.');
+    }
+
+    // 2. Insert into booking_charges
+    $stmt_charge = $conn->prepare("INSERT INTO booking_charges (booking_id, charge_type, amount, description, created_by_admin_id) VALUES (?, ?, ?, ?, ?)");
+    $stmt_charge->bind_param("isdsi", $booking_id, $charge_type, $amount, $description, $admin_user_id);
+    if(!$stmt_charge->execute()) {
+        throw new Exception("Failed to save the additional charge: " . $stmt_charge->error);
+    }
+    $charge_id = $conn->insert_id;
+    $stmt_charge->close();
+
+    // 3. Create a new invoice for this charge
+    $invoice_number = 'INV-CHG-' . strtoupper(generateToken(6));
+    $due_date = date('Y-m-d', strtotime('+14 days'));
+    $notes = "Additional charge for Booking #{$booking_id}: " . $description;
+
+    $stmt_invoice = $conn->prepare("INSERT INTO invoices (user_id, booking_id, invoice_number, amount, status, due_date, notes) VALUES (?, ?, ?, ?, 'pending', ?, ?)");
+    $stmt_invoice->bind_param("iisdss", $user_id, $booking_id, $invoice_number, $amount, $due_date, $notes);
+     if(!$stmt_invoice->execute()) {
+        throw new Exception("Failed to create invoice for the charge: " . $stmt_invoice->error);
+    }
+    $invoice_id = $conn->insert_id;
+    $stmt_invoice->close();
+    
+    // 4. Link the charge to the new invoice
+    $stmt_link = $conn->prepare("UPDATE booking_charges SET invoice_id = ? WHERE id = ?");
+    $stmt_link->bind_param("ii", $invoice_id, $charge_id);
+    $stmt_link->execute();
+    $stmt_link->close();
+
+    // 5. Notify Customer
+    $notification_message = "An additional charge of $" . number_format($amount, 2) . " for '{$description}' has been added to Booking #{$booking_id}.";
+    $notification_link = "invoices?invoice_id={$invoice_id}";
+    $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'payment_due', ?, ?)");
+    $stmt_notify->bind_param("iss", $user_id, $notification_message, $notification_link);
+    $stmt_notify->execute();
+    $stmt_notify->close();
+
+    $conn->commit();
+    echo json_encode(['success' => true, 'message' => 'Additional charge added and invoice generated successfully.']);
+}
+
+
 function handleGetBookingByQuoteId($conn) {
     $quoteId = filter_input(INPUT_GET, 'quote_id', FILTER_VALIDATE_INT);
     if (!$quoteId) {
