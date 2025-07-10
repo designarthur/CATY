@@ -1,84 +1,85 @@
 <?php
-// api/customer/change_password.php
+// customer/pages/change-password.php
 
-// Start session and include necessary files
-session_start();
+// --- Setup & Includes ---
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
 require_once __DIR__ . '/../../includes/db.php';
-require_once __DIR__ . '/../../includes/session.php'; // For is_logged_in() and $_SESSION['user_id']
-require_once __DIR__ . '/../../includes/functions.php'; // For hashPassword() and verifyPassword()
+require_once __DIR__ . '/../../includes/session.php';
+require_once __DIR__ . '/../../includes/functions.php'; // Needed for CSRF functions
 
-header('Content-Type: application/json');
-
-// Check if user is logged in
+// --- Authorization ---
 if (!is_logged_in()) {
-    echo json_encode(['success' => false, 'message' => 'Unauthorized access. Please log in.']);
+    echo '<div class="text-red-500 text-center p-8">You must be logged in to view this content.</div>';
     exit;
 }
 
-$user_id = $_SESSION['user_id'];
-
-// Only process POST requests
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $currentPassword = $_POST['current_password'] ?? '';
-    $newPassword = $_POST['new_password'] ?? '';
-
-    // Server-side validation
-    if (empty($currentPassword) || empty($newPassword)) {
-        echo json_encode(['success' => false, 'message' => 'Both current and new password are required.']);
-        exit;
-    }
-    if (strlen($newPassword) < 8) {
-        echo json_encode(['success' => false, 'message' => 'New password must be at least 8 characters long.']);
-        exit;
-    }
-
-    // 1. Fetch user's current hashed password from DB
-    $stmt = $conn->prepare("SELECT password FROM users WHERE id = ?");
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    if ($result->num_rows === 1) {
-        $user = $result->fetch_assoc();
-        $storedHashedPassword = $user['password'];
-
-        // 2. Verify current password
-        if (verifyPassword($currentPassword, $storedHashedPassword)) {
-            // Check if new password is the same as old password
-            if (verifyPassword($newPassword, $storedHashedPassword)) {
-                echo json_encode(['success' => false, 'message' => 'New password cannot be the same as your current password.']);
-                $stmt->close();
-                $conn->close();
-                exit;
-            }
-
-            // 3. Hash the new password and update in DB
-            $newHashedPassword = hashPassword($newPassword);
-
-            $stmt_update = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
-            $stmt_update->bind_param("si", $newHashedPassword, $user_id);
-
-            if ($stmt_update->execute()) {
-                echo json_encode(['success' => true, 'message' => 'Password updated successfully.']);
-            } else {
-                error_log("Failed to update password for user ID $user_id: " . $stmt_update->error);
-                echo json_encode(['success' => false, 'message' => 'Failed to update password. Please try again.']);
-            }
-            $stmt_update->close();
-
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Incorrect current password.']);
-        }
-
-    } else {
-        // User not found (shouldn't happen if is_logged_in() passed)
-        echo json_encode(['success' => false, 'message' => 'User not found.']);
-    }
-
-    $stmt->close();
-    $conn->close();
-
-} else {
-    echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
-}
+// **THE FIX - Step 1**: Generate the CSRF token before the form is displayed.
+generate_csrf_token();
 ?>
+
+<h1 class="text-3xl font-bold text-gray-800 mb-8">Change Password</h1>
+
+<div class="bg-white p-6 rounded-lg shadow-md border border-blue-200 max-w-xl mx-auto">
+    <form id="change-password-form">
+        <!-- **THE FIX - Step 2**: Add the hidden input field to include the token in the form submission. -->
+        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+
+        <div class="mb-5">
+            <label for="current-password" class="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
+            <input type="password" id="current-password" name="current_password" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required autocomplete="current-password">
+        </div>
+        <div class="mb-5">
+            <label for="new-password" class="block text-sm font-medium text-gray-700 mb-2">New Password</label>
+            <input type="password" id="new-password" name="new_password" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required autocomplete="new-password">
+        </div>
+        <div class="mb-5">
+            <label for="confirm-password" class="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
+            <input type="password" id="confirm-password" name="confirm_password" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required autocomplete="new-password">
+        </div>
+        <div class="text-right">
+            <button type="submit" class="py-3 px-6 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-lg font-semibold">
+                <i class="fas fa-key mr-2"></i>Update Password
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    // The JavaScript for this page remains the same as before.
+    // It will now automatically pick up and send the new csrf_token field when the form is submitted.
+    const changePasswordForm = document.getElementById('change-password-form');
+    if (changePasswordForm) {
+        changePasswordForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            
+            // Client-side validation...
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            if (newPassword !== confirmPassword) {
+                showToast('New password and confirmation do not match.', 'error');
+                return;
+            }
+            
+            showToast('Updating password...', 'info');
+            const formData = new FormData(this);
+
+            try {
+                const response = await fetch('/api/customer/change_password.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    changePasswordForm.reset();
+                } else {
+                    showToast(result.message, 'error');
+                }
+            } catch (error) {
+                showToast('An error occurred. Please try again.', 'error');
+            }
+        });
+    }
+</script>
