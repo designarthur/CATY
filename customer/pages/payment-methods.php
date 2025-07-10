@@ -174,227 +174,229 @@ $stmt->close();
 
 
 <script>
-    // Client-side validation for expiration date (MM/YY)
-    function isValidExpiryDate(month, year) {
-        if (!/^(0[1-9]|1[0-2])$/.test(month) || !/^\d{4}$/.test(year)) {
-            return false;
+    // IIFE to encapsulate the script and prevent global variable conflicts
+    (function() {
+        // Client-side validation for expiration date (MM/YY)
+        function isValidExpiryDate(month, year) {
+            if (!/^(0[1-9]|1[0-2])$/.test(month) || !/^\d{4}$/.test(year)) {
+                return false;
+            }
+
+            const currentYear = new Date().getFullYear();
+            const currentMonth = new Date().getMonth() + 1; // Month is 0-indexed
+
+            const expMonth = parseInt(month, 10);
+            const expYear = parseInt(year, 10);
+
+            if (expYear < currentYear) {
+                return false; // Expired year
+            }
+            if (expYear === currentYear && expMonth < currentMonth) {
+                return false; // Expired month in current year
+            }
+            return true;
         }
 
-        const currentYear = new Date().getFullYear();
-        const currentMonth = new Date().getMonth() + 1; // Month is 0-indexed
+        // --- Add Payment Method Form Handling ---
+        const addPaymentMethodForm = document.getElementById('add-payment-method-form');
+        if (addPaymentMethodForm) {
+            addPaymentMethodForm.addEventListener('submit', async function(event) {
+                event.preventDefault(); // Prevent default form submission
 
-        const expMonth = parseInt(month, 10);
-        const expYear = parseInt(year, 10);
+                const cardNumber = document.getElementById('new-card-number').value.trim();
+                const expiryDate = document.getElementById('new-expiry-date').value.trim(); // MM/YY format
+                const cvv = document.getElementById('new-cvv').value.trim();
+                const cardholderName = document.getElementById('new-cardholder-name').value.trim();
+                const billingAddress = document.getElementById('new-billing-address').value.trim();
 
-        if (expYear < currentYear) {
-            return false; // Expired year
-        }
-        if (expYear === currentYear && expMonth < currentMonth) {
-            return false; // Expired month in current year
-        }
-        return true;
-    }
-
-    // --- Add Payment Method Form Handling ---
-    const addPaymentMethodForm = document.getElementById('add-payment-method-form');
-    if (addPaymentMethodForm) {
-        addPaymentMethodForm.addEventListener('submit', async function(event) {
-            event.preventDefault(); // Prevent default form submission
-
-            const cardNumber = document.getElementById('new-card-number').value.trim();
-            const expiryDate = document.getElementById('new-expiry-date').value.trim(); // MM/YY format
-            const cvv = document.getElementById('new-cvv').value.trim();
-            const cardholderName = document.getElementById('new-cardholder-name').value.trim();
-            const billingAddress = document.getElementById('new-billing-address').value.trim();
-
-            // Client-side validation
-            if (!cardholderName || !cardNumber || !expiryDate || !cvv || !billingAddress) {
-                showToast('Please fill in all fields.', 'error');
-                return;
-            }
-            if (!/^\d{13,16}$/.test(cardNumber.replace(/\s/g, ''))) { // Remove spaces for validation
-                showToast('Please enter a valid card number (13-16 digits).', 'error');
-                return;
-            }
-
-            const expiryParts = expiryDate.split('/');
-            if (expiryParts.length !== 2 || !isValidExpiryDate(expiryParts[0], '20' + expiryParts[1])) { // Assuming YY is 2-digit, convert to 4
-                showToast('Please enter a valid expiration date (MM/YY) that is not expired.', 'error');
-                return;
-            }
-            if (!/^\d{3,4}$/.test(cvv)) {
-                showToast('Please enter a valid CVV (3 or 4 digits).', 'error');
-                return;
-            }
-
-            showToast('Adding new payment method...', 'info');
-
-            const formData = new FormData(this); // Get all form data
-            formData.append('action', 'add_method');
-
-            try {
-                const response = await fetch('/api/customer/payment_methods.php', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    showToast(result.message || 'Payment method added successfully!', 'success');
-                    addPaymentMethodForm.reset(); // Clear form
-                    loadSection('payment-methods'); // Reload the section to show the new method in the list
-                } else {
-                    showToast(result.message || 'Failed to add payment method.', 'error');
+                // Client-side validation
+                if (!cardholderName || !cardNumber || !expiryDate || !cvv || !billingAddress) {
+                    window.showToast('Please fill in all fields.', 'error');
+                    return;
                 }
-            } catch (error) {
-                console.error('Add payment method API Error:', error);
-                showToast('An error occurred while adding payment method. Please try again.', 'error');
-            }
-        });
-    }
-
-    // --- Edit Payment Method Form Handling (NEW) ---
-    const editPaymentMethodForm = document.getElementById('edit-payment-method-form');
-    if (editPaymentMethodForm) {
-        editPaymentMethodForm.addEventListener('submit', async function(event) {
-            event.preventDefault();
-
-            const methodId = document.getElementById('edit-method-id').value;
-            const cardholderName = document.getElementById('edit-cardholder-name').value.trim();
-            const expirationMonth = document.getElementById('edit-expiry-month').value.trim();
-            const expirationYear = document.getElementById('edit-expiry-year').value.trim(); // YYYY format
-            const billingAddress = document.getElementById('edit-billing-address').value.trim();
-            const setDefault = document.getElementById('edit-set-default').checked;
-
-            // Client-side validation for edit form
-            if (!cardholderName || !expirationMonth || !expirationYear || !billingAddress) {
-                showToast('Please fill in all fields.', 'error');
-                return;
-            }
-            if (!isValidExpiryDate(expirationMonth, expirationYear)) {
-                showToast('Please enter a valid expiration date (MM/YYYY) that is not expired.', 'error');
-                return;
-            }
-
-            showToast('Saving changes...', 'info');
-
-            const formData = new FormData();
-            formData.append('action', 'update_method'); // New action for the API
-            formData.append('id', methodId);
-            formData.append('cardholder_name', cardholderName);
-            formData.append('expiration_month', expirationMonth);
-            formData.append('expiration_year', expirationYear);
-            formData.append('billing_address', billingAddress);
-            formData.append('set_default', setDefault ? 'on' : 'off'); // Send 'on' or 'off' as expected by PHP
-
-            try {
-                const response = await fetch('/api/customer/payment_methods.php', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    showToast(result.message || 'Payment method updated successfully!', 'success');
-                    hideModal('edit-payment-modal'); // Hide the modal on success
-                    loadSection('payment-methods'); // Reload to reflect changes
-                } else {
-                    showToast(result.message || 'Failed to update payment method.', 'error');
+                if (!/^\d{13,16}$/.test(cardNumber.replace(/\s/g, ''))) { // Remove spaces for validation
+                    window.showToast('Please enter a valid card number (13-16 digits).', 'error');
+                    return;
                 }
-            } catch (error) {
-                console.error('Update payment method API Error:', error);
-                showToast('An error occurred while updating payment method. Please try again.', 'error');
+
+                const expiryParts = expiryDate.split('/');
+                if (expiryParts.length !== 2 || !isValidExpiryDate(expiryParts[0], '20' + expiryParts[1])) { // Assuming YY is 2-digit, convert to 4
+                    window.showToast('Please enter a valid expiration date (MM/YY) that is not expired.', 'error');
+                    return;
+                }
+                if (!/^\d{3,4}$/.test(cvv)) {
+                    window.showToast('Please enter a valid CVV (3 or 4 digits).', 'error');
+                    return;
+                }
+
+                window.showToast('Adding new payment method...', 'info');
+
+                const formData = new FormData(this); // Get all form data
+                formData.append('action', 'add_method');
+
+                try {
+                    const response = await fetch('/api/customer/payment_methods.php', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        window.showToast(result.message || 'Payment method added successfully!', 'success');
+                        addPaymentMethodForm.reset(); // Clear form
+                        window.loadCustomerSection('payment-methods'); // Reload the section to show the new method in the list
+                    } else {
+                        window.showToast(result.message || 'Failed to add payment method.', 'error');
+                    }
+                } catch (error) {
+                    console.error('Add payment method API Error:', error);
+                    window.showToast('An error occurred while adding payment method. Please try again.', 'error');
+                }
+            });
+        }
+
+        // --- Edit Payment Method Form Handling (NEW) ---
+        const editPaymentMethodForm = document.getElementById('edit-payment-method-form');
+        if (editPaymentMethodForm) {
+            editPaymentMethodForm.addEventListener('submit', async function(event) {
+                event.preventDefault();
+
+                const methodId = document.getElementById('edit-method-id').value;
+                const cardholderName = document.getElementById('edit-cardholder-name').value.trim();
+                const expirationMonth = document.getElementById('edit-expiry-month').value.trim();
+                const expirationYear = document.getElementById('edit-expiry-year').value.trim(); // YYYY format
+                const billingAddress = document.getElementById('edit-billing-address').value.trim();
+                const setDefault = document.getElementById('edit-set-default').checked;
+
+                // Client-side validation for edit form
+                if (!cardholderName || !expirationMonth || !expirationYear || !billingAddress) {
+                    window.showToast('Please fill in all fields.', 'error');
+                    return;
+                }
+                if (!isValidExpiryDate(expirationMonth, expirationYear)) {
+                    window.showToast('Please enter a valid expiration date (MM/YYYY) that is not expired.', 'error');
+                    return;
+                }
+
+                window.showToast('Saving changes...', 'info');
+
+                const formData = new FormData();
+                formData.append('action', 'update_method'); // New action for the API
+                formData.append('id', methodId);
+                formData.append('cardholder_name', cardholderName);
+                formData.append('expiration_month', expirationMonth);
+                formData.append('expiration_year', expirationYear);
+                formData.append('billing_address', billingAddress);
+                formData.append('set_default', setDefault ? 'on' : 'off'); // Send 'on' or 'off' as expected by PHP
+
+                try {
+                    const response = await fetch('/api/customer/payment_methods.php', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        window.showToast(result.message || 'Payment method updated successfully!', 'success');
+                        window.hideModal('edit-payment-modal'); // Hide the modal on success
+                        window.loadCustomerSection('payment-methods'); // Reload to reflect changes
+                    } else {
+                        window.showToast(result.message || 'Failed to update payment method.', 'error');
+                    }
+                } catch (error) {
+                    console.error('Update payment method API Error:', error);
+                    window.showToast('An error occurred while updating payment method. Please try again.', 'error');
+                }
+            });
+        }
+
+        // --- Event listeners for table buttons (Edit, Set Default, Delete) ---
+        document.addEventListener('click', async function(event) {
+            // Handle "Edit" button click
+            if (event.target.classList.contains('edit-payment-btn')) {
+                const row = event.target.closest('tr');
+                document.getElementById('edit-method-id').value = row.dataset.id;
+                document.getElementById('edit-cardholder-name').value = row.dataset.cardholderName;
+                document.getElementById('edit-card-number-display').value = '**** **** **** ' + row.dataset.lastFour;
+                document.getElementById('edit-expiry-month').value = row.dataset.expMonth;
+                document.getElementById('edit-expiry-year').value = row.dataset.expYear; // Full 4-digit year
+                document.getElementById('edit-billing-address').value = row.dataset.billingAddress;
+                document.getElementById('edit-set-default').checked = (row.dataset.isDefault === 'true');
+                window.showModal('edit-payment-modal');
             }
-        });
-    }
 
-    // --- Event listeners for table buttons (Edit, Set Default, Delete) ---
-    document.addEventListener('click', async function(event) {
-        // Handle "Edit" button click
-        if (event.target.classList.contains('edit-payment-btn')) {
-            const row = event.target.closest('tr');
-            document.getElementById('edit-method-id').value = row.dataset.id;
-            document.getElementById('edit-cardholder-name').value = row.dataset.cardholderName;
-            document.getElementById('edit-card-number-display').value = '**** **** **** ' + row.dataset.lastFour;
-            document.getElementById('edit-expiry-month').value = row.dataset.expMonth;
-            document.getElementById('edit-expiry-year').value = row.dataset.expYear; // Full 4-digit year
-            document.getElementById('edit-billing-address').value = row.dataset.billingAddress;
-            document.getElementById('edit-set-default').checked = (row.dataset.isDefault === 'true');
-            showModal('edit-payment-modal');
-        }
+            // Handle "Set Default" button click
+            if (event.target.classList.contains('set-default-payment-btn')) {
+                const methodId = event.target.dataset.id;
+                window.showConfirmationModal(
+                    'Set Default Payment Method',
+                    'Are you sure you want to set this as your default payment method?',
+                    async (confirmed) => {
+                        if (confirmed) {
+                            window.showToast('Setting default payment method...', 'info');
+                            const formData = new FormData();
+                            formData.append('action', 'set_default');
+                            formData.append('id', methodId);
 
-        // Handle "Set Default" button click
-        if (event.target.classList.contains('set-default-payment-btn')) {
-            const methodId = event.target.dataset.id;
-            showConfirmationModal(
-                'Set Default Payment Method',
-                'Are you sure you want to set this as your default payment method?',
-                async (confirmed) => {
-                    if (confirmed) {
-                        showToast('Setting default payment method...', 'info');
-                        const formData = new FormData();
-                        formData.append('action', 'set_default');
-                        formData.append('id', methodId);
-
-                        try {
-                            const response = await fetch('/api/customer/payment_methods.php', {
-                                method: 'POST',
-                                body: formData
-                            });
-                            const result = await response.json();
-                            if (result.success) {
-                                showToast(result.message || 'Default payment method updated!', 'success');
-                                loadSection('payment-methods'); // Reload to reflect changes
-                            } else {
-                                showToast(result.message || 'Failed to set default payment method.', 'error');
+                            try {
+                                const response = await fetch('/api/customer/payment_methods.php', {
+                                    method: 'POST',
+                                    body: formData
+                                });
+                                const result = await response.json();
+                                if (result.success) {
+                                    window.showToast(result.message || 'Default payment method updated!', 'success');
+                                    window.loadCustomerSection('payment-methods'); // Reload to reflect changes
+                                } else {
+                                    window.showToast(result.message || 'Failed to set default payment method.', 'error');
+                                }
+                            } catch (error) {
+                                console.error('Set default payment method API Error:', error);
+                                window.showToast('An error occurred. Please try again.', 'error');
                             }
-                        } catch (error) {
-                            console.error('Set default payment method API Error:', error);
-                            showToast('An error occurred. Please try again.', 'error');
                         }
-                    }
-                },
-                'Set Default', // Confirm button text
-                'bg-green-600' // Confirm button color
-            );
-        }
+                    },
+                    'Set Default', // Confirm button text
+                    'bg-green-600' // Confirm button color
+                );
+            }
 
-        // Handle "Delete" button click
-        if (event.target.classList.contains('delete-payment-btn')) {
-            const methodId = event.target.dataset.id;
-            showConfirmationModal(
-                'Delete Payment Method',
-                'Are you sure you want to delete this payment method? This action cannot be undone.',
-                async (confirmed) => {
-                    if (confirmed) {
-                        showToast('Deleting payment method...', 'info');
-                        const formData = new FormData();
-                        formData.append('action', 'delete_method');
-                        formData.append('id', methodId);
+            // Handle "Delete" button click
+            if (event.target.classList.contains('delete-payment-btn')) {
+                const methodId = event.target.dataset.id;
+                window.showConfirmationModal(
+                    'Delete Payment Method',
+                    'Are you sure you want to delete this payment method? This action cannot be undone.',
+                    async (confirmed) => {
+                        if (confirmed) {
+                            window.showToast('Deleting payment method...', 'info');
+                            const formData = new FormData();
+                            formData.append('action', 'delete_method');
+                            formData.append('id', methodId);
 
-                        try {
-                            const response = await fetch('/api/customer/payment_methods.php', {
-                                method: 'POST',
-                                body: formData
-                            });
-                            const result = await response.json();
-                            if (result.success) {
-                                showToast(result.message || 'Payment method deleted!', 'success');
-                                loadSection('payment-methods'); // Reload to reflect changes
-                            } else {
-                                showToast(result.message || 'Failed to delete payment method.', 'error');
+                            try {
+                                const response = await fetch('/api/customer/payment_methods.php', {
+                                    method: 'POST',
+                                    body: formData
+                                });
+                                const result = await response.json();
+                                if (result.success) {
+                                    window.showToast(result.message || 'Payment method deleted!', 'success');
+                                    window.loadCustomerSection('payment-methods'); // Reload to reflect changes
+                                } else {
+                                    window.showToast(result.message || 'Failed to delete payment method.', 'error');
+                                    }
+                                } catch (error) {
+                                    console.error('Delete payment method API Error:', error);
+                                    window.showToast('An error occurred. Please try again.', 'error');
+                                }
                             }
-                        } catch (error) {
-                            console.error('Delete payment method API Error:', error);
-                            showToast('An error occurred. Please try again.', 'error');
-                        }
-                    }
-                },
-                'Delete', // Confirm button text
-                'bg-red-600' // Confirm button color
-            );
-        }
-    });
-</script>
+                        },
+                        'Delete', // Confirm button text
+                        'bg-red-600' // Confirm button color
+                    );
+                }
+            });
+        })(); // End of IIFE
