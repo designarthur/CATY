@@ -51,24 +51,34 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(500); // Internal Server Error
-    error_log("Admin Quote API Error: " . $e->getMessage());
+    error_log("Admin Quote API Error for Quote ID {$quoteId}: " . $e->getMessage());
     echo json_encode(['success' => false, 'message' => 'An internal server error occurred. ' . $e->getMessage()]);
 } finally {
-    $conn->close();
+    if (isset($conn) && $conn->ping()) {
+        $conn->close();
+    }
 }
 
 
 // --- Handler Functions ---
 
 /**
- * Submits a price for a quote and notifies the customer.
+ * Submits a price for a quote, including new charges, and notifies the customer.
  */
 function handleSubmitQuote($conn, $quoteId) {
-    $quotedPrice = filter_var($_POST['quoted_price'] ?? 0, FILTER_VALIDATE_FLOAT);
+    // --- Input Validation ---
+    $quotedPrice = filter_input(INPUT_POST, 'quoted_price', FILTER_VALIDATE_FLOAT);
+    // **NEW**: Get the new charge values from the form, providing a default of 0.00 if not set.
+    $swapCharge = filter_input(INPUT_POST, 'swap_charge', FILTER_VALIDATE_FLOAT);
+    $relocationCharge = filter_input(INPUT_POST, 'relocation_charge', FILTER_VALIDATE_FLOAT);
     $adminNotes = trim($_POST['admin_notes'] ?? '');
 
-    if ($quotedPrice <= 0) {
-        throw new Exception('Quoted price must be a positive number.');
+    // Set to 0.00 if null or empty after filtering
+    $swapCharge = $swapCharge ?? 0.00;
+    $relocationCharge = $relocationCharge ?? 0.00;
+
+    if ($quotedPrice === false || $quotedPrice <= 0) {
+        throw new Exception('A valid main quoted price is required.');
     }
 
     $conn->begin_transaction();
@@ -78,12 +88,14 @@ function handleSubmitQuote($conn, $quoteId) {
     $stmt_fetch->bind_param("i", $quoteId);
     $stmt_fetch->execute();
     $quote_user_data = $stmt_fetch->get_result()->fetch_assoc();
+    $stmt_fetch->close();
     if (!$quote_user_data) throw new Exception('User for the quote not found.');
 
-    // 1. Update the quote in the database
-    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, admin_notes = ? WHERE id = ?");
-    $stmt_update->bind_param("dsi", $quotedPrice, $adminNotes, $quoteId);
+    // 1. **THE FIX**: Update the quote in the database, now including the new charge fields.
+    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, swap_charge = ?, relocation_charge = ?, admin_notes = ? WHERE id = ?");
+    $stmt_update->bind_param("dddsi", $quotedPrice, $swapCharge, $relocationCharge, $adminNotes, $quoteId);
     $stmt_update->execute();
+    $stmt_update->close();
 
     // 2. Prepare and send email notification
     $customerEmail = $quote_user_data['email'];
@@ -94,12 +106,10 @@ function handleSubmitQuote($conn, $quoteId) {
         'template_adminNotes' => $adminNotes,
         'template_customerQuoteLink' => "https://{$_SERVER['HTTP_HOST']}/customer/dashboard.php#quotes?quote_id={$quoteId}"
     ];
-    // This is a cleaner way to pass variables to a template file
     ob_start();
     extract($template_vars);
     include __DIR__ . '/../../includes/mail_templates/quote_ready_email.php';
     $emailBody = ob_get_clean();
-
     sendEmail($customerEmail, "Your Quote #Q{$quoteId} is Ready!", $emailBody);
 
     // 3. Create a system notification for the user
@@ -108,6 +118,7 @@ function handleSubmitQuote($conn, $quoteId) {
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'new_quote', ?, ?)");
     $stmt_notify->bind_param("iss", $quote_user_data['id'], $notification_message, $notification_link);
     $stmt_notify->execute();
+    $stmt_notify->close();
 
     $conn->commit();
     echo json_encode(['success' => true, 'message' => 'Quote submitted and customer notified!']);
@@ -124,12 +135,14 @@ function handleRejectQuote($conn, $quoteId) {
     $stmt_fetch->bind_param("i", $quoteId);
     $stmt_fetch->execute();
     $quote_user_data = $stmt_fetch->get_result()->fetch_assoc();
+    $stmt_fetch->close();
     if (!$quote_user_data) throw new Exception('User for the quote not found.');
 
     // 1. Update quote status
     $stmt_update = $conn->prepare("UPDATE quotes SET status = 'rejected' WHERE id = ?");
     $stmt_update->bind_param("i", $quoteId);
     $stmt_update->execute();
+    $stmt_update->close();
 
     // 2. Notify customer via email
     $emailBody = "<p>Dear {$quote_user_data['first_name']},</p><p>We regret to inform you that your quote request #Q{$quoteId} has been rejected at this time. Please contact us if you have any questions.</p>";
@@ -141,9 +154,50 @@ function handleRejectQuote($conn, $quoteId) {
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'quote_rejected', ?, ?)");
     $stmt_notify->bind_param("iss", $quote_user_data['id'], $notification_message, $notification_link);
     $stmt_notify->execute();
+    $stmt_notify->close();
 
     $conn->commit();
     echo json_encode(['success' => true, 'message' => 'Quote has been rejected and the customer notified.']);
 }
 
-// Implement handleResendQuote similarly...
+/**
+ * Resends the quote notification email to the customer.
+ */
+function handleResendQuote($conn, $quoteId) {
+    // Fetch current quote details to get quoted price and admin notes
+    $stmt_fetch = $conn->prepare("
+        SELECT q.quoted_price, q.admin_notes, u.email, u.first_name
+        FROM quotes q
+        JOIN users u ON q.user_id = u.id
+        WHERE q.id = ? AND q.status = 'quoted'
+    ");
+    $stmt_fetch->bind_param("i", $quoteId);
+    $stmt_fetch->execute();
+    $quote_data = $stmt_fetch->get_result()->fetch_assoc();
+    $stmt_fetch->close();
+
+    if (!$quote_data) {
+        throw new Exception('Quote not found or is not in a "quoted" status.');
+    }
+
+    // Prepare and send email notification
+    $template_vars = [
+        'template_companyName' => getSystemSetting('company_name') ?? 'CAT Dump',
+        'template_quoteId' => $quoteId,
+        'template_quotedPrice' => number_format($quote_data['quoted_price'], 2),
+        'template_adminNotes' => $quote_data['admin_notes'],
+        'template_customerQuoteLink' => "https://{$_SERVER['HTTP_HOST']}/customer/dashboard.php#quotes?quote_id={$quoteId}"
+    ];
+    ob_start();
+    extract($template_vars);
+    include __DIR__ . '/../../includes/mail_templates/quote_ready_email.php';
+    $emailBody = ob_get_clean();
+
+    if (sendEmail($quote_data['email'], "[Resend] Your Quote #Q{$quoteId} is Ready!", $emailBody)) {
+        echo json_encode(['success' => true, 'message' => 'Quote resent successfully!']);
+    } else {
+        throw new Exception('Failed to resend email notification.');
+    }
+}
+
+?>

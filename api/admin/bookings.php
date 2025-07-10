@@ -16,9 +16,9 @@ if (!is_logged_in() || !has_role('admin')) {
     exit;
 }
 
-// Determine request method and route to the appropriate logic
+// --- Request Routing ---
 $request_method = $_SERVER['REQUEST_METHOD'];
-$action = $_REQUEST['action'] ?? '';
+$action = $_REQUEST['action'] ?? ''; // Use $_REQUEST to handle GET or POST actions
 
 try {
     if ($request_method === 'POST') {
@@ -45,29 +45,32 @@ try {
         throw new Exception('Invalid request method.');
     }
 } catch (Exception $e) {
+    // Catch any exceptions thrown from handler functions
     http_response_code(400); // Bad Request for most client-side errors
     error_log("Admin Bookings API Error: " . $e->getMessage());
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 } finally {
-    $conn->close();
+    if (isset($conn) && $conn->ping()) {
+        $conn->close();
+    }
 }
 
 
 // --- Handler Functions ---
 
 /**
- * Handles updating the status of a booking.
+ * Handles updating the status of a booking and logs the event.
  */
 function handleUpdateStatus($conn) {
     $booking_id = filter_input(INPUT_POST, 'booking_id', FILTER_VALIDATE_INT);
     $newStatus = trim($_POST['status'] ?? '');
+    $notes = "Status updated to " . ucwords(str_replace('_', ' ', $newStatus)) . " by admin.";
 
     if (!$booking_id || empty($newStatus)) {
         throw new Exception('Booking ID and new status are required.');
     }
 
-    // **THE FIX IS HERE**: The list of allowed statuses now matches the updated database schema
-    // and the dropdown menu in the admin panel.
+    // This list MUST match the ENUM in your database and the dropdown in the admin panel.
     $allowedStatuses = [
         'pending', 'scheduled', 'assigned', 'pickedup', 'out_for_delivery',
         'delivered', 'in_use', 'awaiting_pickup', 'completed', 'cancelled',
@@ -95,7 +98,7 @@ function handleUpdateStatus($conn) {
         return;
     }
 
-    // 1. Update the booking status
+    // 1. Update the booking status in the main `bookings` table
     $stmt_update = $conn->prepare("UPDATE bookings SET status = ? WHERE id = ?");
     $stmt_update->bind_param("si", $newStatus, $booking_id);
     if (!$stmt_update->execute()) {
@@ -103,7 +106,16 @@ function handleUpdateStatus($conn) {
     }
     $stmt_update->close();
 
-    // 2. Create a notification and send email to the customer
+    // 2. **NEW**: Log this event to the `booking_status_history` table for the timeline feature.
+    $stmt_log = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, ?, ?)");
+    $stmt_log->bind_param("iss", $booking_id, $newStatus, $notes);
+    if (!$stmt_log->execute()) {
+        throw new Exception("Failed to log status history: " . $stmt_log->error);
+    }
+    $stmt_log->close();
+
+
+    // 3. Create a notification and send an email to the customer
     $notification_message = "Your booking #BK-{$booking_data['booking_number']} has been updated to: " . ucwords(str_replace('_', ' ', $newStatus)) . ".";
     $notification_link = "bookings?booking_id={$booking_id}";
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'booking_status_update', ?, ?)");
@@ -114,7 +126,6 @@ function handleUpdateStatus($conn) {
     // Send email
     $emailBody = "<p>Dear {$booking_data['first_name']},</p><p>The status of your booking #BK-{$booking_data['booking_number']} has been updated to: <strong>" . ucwords(str_replace('_', ' ', $newStatus)) . "</strong>.</p>";
     sendEmail($booking_data['email'], "Update on your Booking #BK-{$booking_data['booking_number']}", $emailBody);
-
 
     $conn->commit();
     echo json_encode(['success' => true, 'message' => 'Booking status updated successfully!']);
@@ -131,20 +142,31 @@ function handleAssignVendor($conn) {
     if (!$booking_id || !$vendor_id) {
         throw new Exception('Booking ID and Vendor ID are required.');
     }
-    
-    // In a real-world scenario, you might also want to automatically
-    // change the booking status to 'assigned' here.
-    $stmt = $conn->prepare("UPDATE bookings SET vendor_id = ?, status = 'assigned' WHERE id = ?");
-    $stmt->bind_param("ii", $vendor_id, $booking_id);
-    $stmt->execute();
 
-    if($stmt->affected_rows > 0) {
+    $conn->begin_transaction();
+    
+    // Update booking with vendor and set status to 'assigned'
+    $stmt_update = $conn->prepare("UPDATE bookings SET vendor_id = ?, status = 'assigned' WHERE id = ?");
+    $stmt_update->bind_param("ii", $vendor_id, $booking_id);
+    $stmt_update->execute();
+    
+    if($stmt_update->affected_rows > 0) {
+        // Log the assignment event
+        $notes = "Booking assigned to a vendor by admin.";
+        $stmt_log = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, 'assigned', ?)");
+        $stmt_log->bind_param("is", $booking_id, $notes);
+        $stmt_log->execute();
+        $stmt_log->close();
+
         // You should also add logic here to notify the customer and/or the vendor.
-        echo json_encode(['success' => true, 'message' => 'Vendor assigned successfully and status updated to "Assigned".']);
+        
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'Vendor assigned successfully and status updated.']);
     } else {
+        $conn->rollback();
         throw new Exception('Failed to assign vendor or vendor was already assigned.');
     }
-    $stmt->close();
+    $stmt_update->close();
 }
 
 
