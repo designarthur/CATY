@@ -169,12 +169,9 @@ function getStatusBadgeClass($status) {
                     $subtotal = 0;
                     $items_to_display = [];
 
-                    // Determine total amount for calculation, prioritizing booking_total_price if available and correct
                     $base_amount = $invoice_detail['booking_total_price'] ?? $invoice_detail['amount'];
 
-                    // Try to derive items from linked quote details (if no booking yet) or booking details (after conversion)
                     if ($invoice_detail['service_type'] == 'equipment_rental') {
-                        // Prioritize QED details if available, otherwise fall back to booking_equipment_details
                         $equipment_name_display = $invoice_detail['equipment_name'] ?? ($invoice_detail['booking_equipment_details'][0]['equipment_name'] ?? 'Equipment Rental');
                         $quantity_display = $invoice_detail['quantity'] ?? ($invoice_detail['booking_equipment_details'][0]['quantity'] ?? 1);
                         $duration_days_display = $invoice_detail['duration_days'] ?? ($invoice_detail['booking_equipment_details'][0]['duration_days'] ?? null);
@@ -189,7 +186,7 @@ function getStatusBadgeClass($status) {
                         }
 
                         $qty = $quantity_display;
-                        $unit_price = ($base_amount / $qty); // Estimate unit price based on total amount
+                        $unit_price = ($qty > 0) ? ($base_amount / $qty) : 0;
                         $item_total = $base_amount;
                         $subtotal += $item_total;
 
@@ -201,8 +198,8 @@ function getStatusBadgeClass($status) {
                         ];
                     } elseif ($invoice_detail['service_type'] == 'junk_removal') {
                         $junk_desc = 'Junk Removal Service';
-                        $junk_items_from_quote = $invoice_detail['junk_items_json'] ?? []; // Already decoded
-                        $junk_items_from_booking = $invoice_detail['booking_junk_details']['junkItems'] ?? []; // Already decoded
+                        $junk_items_from_quote = $invoice_detail['junk_items_json'] ?? [];
+                        $junk_items_from_booking = $invoice_detail['booking_junk_details']['junkItems'] ?? [];
 
                         $items_source = !empty($junk_items_from_quote) ? $junk_items_from_quote : $junk_items_from_booking;
 
@@ -225,11 +222,10 @@ function getStatusBadgeClass($status) {
                             'total' => $item_total
                         ];
                     } else {
-                        // Fallback: If service type is unknown or no details derived, show a generic line item
                         $item_total = $invoice_detail['quoted_price'] ?? $base_amount;
                         $subtotal = $item_total;
                         $items_to_display[] = [
-                            'desc' => 'General Service or Item', // More generic fallback
+                            'desc' => 'General Service or Item',
                             'qty' => 1,
                             'unit_price' => $item_total,
                             'total' => $item_total
@@ -239,16 +235,14 @@ function getStatusBadgeClass($status) {
                     foreach ($items_to_display as $item):
                     ?>
                         <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $item['desc']; ?></td>
+                            <td class="px-6 py-4 text-sm text-gray-900"><?php echo $item['desc']; ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo $item['qty']; ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$<?php echo number_format($item['unit_price'], 2); ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$<?php echo number_format($item['total'], 2); ?></td>
                         </tr>
                     <?php endforeach;
-                    // Calculate tax and grand total based on the invoice's actual amount, assuming tax is included
-                    // If your system adds tax later, you'd calculate it differently.
                     $tax_amount = $invoice_detail['amount'] - $subtotal;
-                    if ($tax_amount < 0) $tax_amount = 0; // Prevent negative tax if subtotal calculation is imprecise
+                    if ($tax_amount < 0) $tax_amount = 0;
                     ?>
                 </tbody>
             </table>
@@ -270,7 +264,7 @@ function getStatusBadgeClass($status) {
             </button>
             <?php endif; ?>
         </div>
-    <?php else: // No invoice found for detail view ?>
+    <?php else: ?>
         <p class="text-center text-gray-600">Invoice details not found or invalid invoice ID.</p>
     <?php endif; ?>
 </div>
@@ -281,9 +275,15 @@ function getStatusBadgeClass($status) {
     </button>
     <h2 class="text-2xl font-bold text-gray-800 mb-6">Process Payment for <span id="payment-invoice-id"></span></h2>
 
-    <form id="payment-form" method="POST" action="/api/payments.php">
+    <form id="payment-form" data-original-details="">
         <input type="hidden" name="action" value="process_payment">
         <input type="hidden" name="invoice_number" id="payment-form-invoice-number-hidden">
+        <input type="hidden" name="payment_method_token" id="payment-method-token-hidden">
+
+        <div class="mb-5">
+            <label for="cardholder-name" class="block text-sm font-medium text-gray-700 mb-2">Cardholder Name</label>
+            <input type="text" id="cardholder-name" name="cardholder_name" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="John Doe" required>
+        </div>
         <div class="mb-5">
             <label for="card-number" class="block text-sm font-medium text-gray-700 mb-2">Card Number</label>
             <input type="text" id="card-number" name="card_number" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="**** **** **** ****" required pattern="[0-9\s]{13,19}" maxlength="19">
@@ -302,9 +302,22 @@ function getStatusBadgeClass($status) {
             <label for="billing-address" class="block text-sm font-medium text-gray-700 mb-2">Billing Address</label>
             <input type="text" id="billing-address" name="billing_address" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="123 Example St, City, State, Zip" required>
         </div>
+
+        <div id="save-card-section" class="mb-5 p-4 bg-blue-50 border border-blue-200 rounded-lg hidden">
+             <p class="text-sm text-blue-800 mb-3">You've updated your card details. Would you like to save this as a new payment method?</p>
+             <div class="flex items-center mb-2">
+                 <input type="checkbox" id="save-new-card" name="save_new_card" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                 <label for="save-new-card" class="ml-2 block text-sm text-gray-900">Save this new card for future use</label>
+             </div>
+             <div id="set-new-card-default-section" class="flex items-center hidden ml-6">
+                 <input type="checkbox" id="set-new-card-default" name="set_new_card_default" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                 <label for="set-new-card-default" class="ml-2 block text-sm text-gray-900">Also make this my default payment method</label>
+             </div>
+        </div>
+
         <div class="mb-5">
             <label for="payment-amount" class="block text-sm font-medium text-gray-700 mb-2">Amount to Pay</label>
-            <input type="number" id="payment-amount" name="amount" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" step="0.01" value="0.00" readonly>
+            <input type="number" id="payment-amount" name="amount" class="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 focus:ring-blue-500 focus:border-blue-500" step="0.01" value="0.00" readonly>
         </div>
         <button type="submit" class="w-full py-3 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-lg font-semibold">
             <i class="fas fa-dollar-sign mr-2"></i>Confirm Payment
@@ -314,14 +327,6 @@ function getStatusBadgeClass($status) {
 
 <script>
     // These functions are specific to invoices.php and are made global for onclick attributes.
-
-    // Global helper from dashboard.php, ensuring it's available for this script
-    // function showToast(message, type) { /* ... defined in dashboard.php */ }
-    // function showModal(id) { /* ... defined in dashboard.php */ }
-    // function hideModal(id) { /* ... defined in dashboard.php */ }
-    // window.loadCustomerSection = function() { /* ... defined in dashboard.php */ };
-
-
     window.showInvoiceDetails = function(invoiceNumber) {
         window.loadCustomerSection('invoices', { invoice_id: invoiceNumber });
     };
@@ -329,16 +334,6 @@ function getStatusBadgeClass($status) {
     window.hideInvoiceDetails = function() {
         window.loadCustomerSection('invoices');
         history.replaceState(null, '', '#invoices'); // Adjust URL hash
-    };
-
-    window.showPaymentForm = function(invoiceId, amount) {
-        document.getElementById('payment-invoice-id').textContent = invoiceId;
-        document.getElementById('payment-form-invoice-number-hidden').value = invoiceId;
-        document.getElementById('payment-amount').value = parseFloat(amount).toFixed(2);
-
-        document.getElementById('invoice-detail-view').classList.add('hidden');
-        document.getElementById('invoice-list').classList.add('hidden');
-        document.getElementById('payment-form-view').classList.remove('hidden');
     };
 
     window.hidePaymentForm = function() {
@@ -354,114 +349,174 @@ function getStatusBadgeClass($status) {
         }
     };
 
+    // --- IIFE for Invoice Page Specific JavaScript ---
+    (function() {
+        const paymentForm = document.getElementById('payment-form');
+        const cardholderNameInput = document.getElementById('cardholder-name');
+        const cardNumberInput = document.getElementById('card-number');
+        const expiryDateInput = document.getElementById('expiry-date');
+        const cvvInput = document.getElementById('cvv');
+        const billingAddressInput = document.getElementById('billing-address');
+        const saveCardSection = document.getElementById('save-card-section');
+        const saveNewCardCheckbox = document.getElementById('save-new-card');
+        const setNewCardDefaultSection = document.getElementById('set-new-card-default-section');
+        const paymentMethodTokenInput = document.getElementById('payment-method-token-hidden');
 
-    // --- Invoice Page Specific JavaScript (wrapped in IIFE to prevent variable re-declaration) ---
-    (function() { // Start IIFE
+        function resetPaymentForm() {
+            paymentForm.reset();
+            saveCardSection.classList.add('hidden');
+            setNewCardDefaultSection.classList.add('hidden');
+            paymentMethodTokenInput.value = '';
+            paymentForm.dataset.originalDetails = '';
+            cardNumberInput.value = '';
+            cvvInput.value = '';
+            [cardNumberInput, cvvInput].forEach(el => {
+                el.disabled = false;
+                el.placeholder = el.id === 'card-number' ? '**** **** **** ****' : '***';
+                el.classList.remove('bg-gray-100');
+            });
+        }
 
-        // Function from payment-methods.php, needed here for payment form validation (remains local to IIFE)
+        function populateWithDefault(method) {
+            cardholderNameInput.value = method.cardholder_name;
+            billingAddressInput.value = method.billing_address;
+            expiryDateInput.value = `${method.expiration_month}/${method.expiration_year.slice(-2)}`;
+            paymentMethodTokenInput.value = method.braintree_payment_token;
+
+            cardNumberInput.value = `**** **** **** ${method.last_four}`;
+            cardNumberInput.disabled = true;
+            cvvInput.placeholder = "***";
+            cvvInput.disabled = true;
+            [cardNumberInput, cvvInput].forEach(el => el.classList.add('bg-gray-100'));
+
+            const originalDetails = {
+                cardholder_name: method.cardholder_name,
+                billing_address: method.billing_address,
+                expiry_date: `${method.expiration_month}/${method.expiration_year.slice(-2)}`,
+            };
+            paymentForm.dataset.originalDetails = JSON.stringify(originalDetails);
+        }
+
+        function checkForChanges() {
+            const originalDetails = JSON.parse(paymentForm.dataset.originalDetails || '{}');
+            if (Object.keys(originalDetails).length === 0) return;
+
+            const currentDetails = {
+                cardholder_name: cardholderNameInput.value.trim(),
+                billing_address: billingAddressInput.value.trim(),
+                expiry_date: expiryDateInput.value.trim()
+            };
+
+            const hasChanged = JSON.stringify(originalDetails) !== JSON.stringify(currentDetails);
+
+            if (hasChanged) {
+                saveCardSection.classList.remove('hidden');
+                if (cardNumberInput.disabled) {
+                    cardNumberInput.disabled = false;
+                    cardNumberInput.value = '';
+                    cardNumberInput.placeholder = 'Enter new card number';
+                    cvvInput.disabled = false;
+                    cvvInput.value = '';
+                    cvvInput.placeholder = '***';
+                    [cardNumberInput, cvvInput].forEach(el => el.classList.remove('bg-gray-100'));
+                    paymentMethodTokenInput.value = '';
+                }
+            } else {
+                saveCardSection.classList.add('hidden');
+            }
+        }
+
+        window.showPaymentForm = async function(invoiceId, amount) {
+            resetPaymentForm();
+
+            document.getElementById('payment-invoice-id').textContent = invoiceId;
+            document.getElementById('payment-form-invoice-number-hidden').value = invoiceId;
+            document.getElementById('payment-amount').value = parseFloat(amount).toFixed(2);
+
+            document.getElementById('invoice-detail-view').classList.add('hidden');
+            document.getElementById('invoice-list').classList.add('hidden');
+            document.getElementById('payment-form-view').classList.remove('hidden');
+
+            try {
+                // *** CORRECTED PATH ***
+                const response = await fetch('../api/customer/payment_methods.php?action=get_default_method');
+                const result = await response.json();
+                if (result.success && result.method) {
+                    populateWithDefault(result.method);
+                }
+            } catch (error) {
+                console.warn('Could not fetch default payment method:', error);
+            }
+        };
+
+        [cardholderNameInput, expiryDateInput, billingAddressInput].forEach(input => {
+            input.addEventListener('input', checkForChanges);
+        });
+
+        saveNewCardCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                setNewCardDefaultSection.classList.remove('hidden');
+            } else {
+                setNewCardDefaultSection.classList.add('hidden');
+            }
+        });
+        
         function isValidExpiryDate(month, year) {
             if (!/^(0[1-9]|1[0-2])$/.test(month) || !/^\d{4}$/.test(year)) {
                 return false;
             }
-
             const currentYear = new Date().getFullYear();
-            const currentMonth = new Date().getMonth() + 1; // Month is 0-indexed
-
+            const currentMonth = new Date().getMonth() + 1;
             const expMonth = parseInt(month, 10);
             const expYear = parseInt(year, 10);
 
-            if (expYear < currentYear) {
-                return false; // Expired year
-            }
-            if (expYear === currentYear && expMonth < currentMonth) {
-                return false; // Expired month in current year
+            if (expYear < currentYear || (expYear === currentYear && expMonth < currentMonth)) {
+                return false;
             }
             return true;
         }
 
-        // --- Event Listeners ---
-        // These can still be inside the IIFE and attached directly, as they run after the HTML is loaded.
-
-         // Attach listeners for "View" buttons in the invoice list (KEEP THIS)
-    document.querySelectorAll('.view-invoice-details').forEach(button => {
-        button.removeEventListener('click', showInvoiceDetailsWrapper);
-        button.addEventListener('click', showInvoiceDetailsWrapper);
-    });
-
-    // Wrapper to call the global function
-    function showInvoiceDetailsWrapper(event) {
-        window.showInvoiceDetails(this.dataset.invoiceId);
-    }
-
-    // Attach listeners for "Pay Now" buttons in the invoice list and detail view (REMOVE THIS ENTIRE BLOCK)
-    document.querySelectorAll('.pay-invoice-btn').forEach(button => {
-        button.removeEventListener('click', showPaymentFormWrapper);
-        button.addEventListener('click', showPaymentFormWrapper);
-    });
-
-    function showPaymentFormWrapper(event) {
-        window.showPaymentForm(this.dataset.invoiceId, this.dataset.amount);
-    }
-
-
-        // Handle payment form submission (AJAX to /api/payments.php)
-        const paymentForm = document.getElementById('payment-form');
-        // Only attach listener if element exists and listener is not already attached (using a data attribute flag)
         if (paymentForm && !paymentForm.dataset.listenerAttached) {
             paymentForm.addEventListener('submit', async function(event) {
                 event.preventDefault();
+                
+                const cardNumber = cardNumberInput.value.trim();
+                const expiryDate = expiryDateInput.value.trim();
+                const cvv = cvvInput.value.trim();
 
-                const invoiceNumber = document.getElementById('payment-form-invoice-number-hidden').value;
-                const amount = document.getElementById('payment-amount').value;
-                const cardNumber = document.getElementById('card-number').value.trim();
-                const expiryDate = document.getElementById('expiry-date').value.trim();
-                const cvv = document.getElementById('cvv').value.trim();
-                const billingAddress = document.getElementById('billing-address').value.trim();
+                if (!cardNumberInput.disabled) {
+                     if (!/^\d{13,16}$/.test(cardNumber.replace(/\s/g, ''))) {
+                        window.showToast('Please enter a valid card number (13-16 digits).', 'error');
+                        return;
+                    }
+                     if (!/^\d{3,4}$/.test(cvv)) {
+                        window.showToast('Please enter a valid CVV (3 or 4 digits).', 'error');
+                        return;
+                    }
+                }
 
-                if (!cardNumber || !expiryDate || !cvv || !billingAddress) {
-                    window.showToast('Please fill in all payment details.', 'error');
-                    return;
-                }
-                if (!/^\d{13,16}$/.test(cardNumber.replace(/\s/g, ''))) {
-                    window.showToast('Please enter a valid card number (13-16 digits).', 'error');
-                    return;
-                }
                 const expiryParts = expiryDate.split('/');
                 if (expiryParts.length !== 2 || !isValidExpiryDate(expiryParts[0], '20' + expiryParts[1])) {
                     window.showToast('Please enter a valid expiration date (MM/YY) that is not expired.', 'error');
-                    return;
-                }
-                if (!/^\d{3,4}$/.test(cvv)) {
-                    window.showToast('Please enter a valid CVV (3 or 4 digits).', 'error');
                     return;
                 }
 
                 window.showToast('Processing payment...', 'info');
 
                 try {
-                    const response = await fetch(paymentForm.action, {
+                    const formData = new FormData(this);
+                     // *** CORRECTED PATH ***
+                    const response = await fetch('../api/payments.php', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded'
-                        },
-                        body: new URLSearchParams({
-                            action: 'process_payment',
-                            invoice_number: invoiceNumber,
-                            amount: amount,
-                            payment_method_nonce: 'fake-valid-nonce',
-                            card_number: cardNumber,
-                            expiry_date: expiryDate,
-                            cvv: cvv,
-                            billing_address: billingAddress
-                        }).toString()
+                        body: formData
                     });
 
                     const result = await response.json();
 
                     if (result.success) {
-                        window.hidePaymentForm(); // Call global hidePaymentForm
-                        window.showToast('Payment successful! Your booking is now confirmed.', 'success');
-                        window.loadCustomerSection('bookings');
+                        window.hidePaymentForm();
+                        window.showToast(result.message || 'Payment successful!', 'success');
+                        window.loadCustomerSection('bookings', { booking_id: result.booking_id });
                     } else {
                         window.showToast('Payment failed: ' + result.message, 'error');
                     }
@@ -472,6 +527,18 @@ function getStatusBadgeClass($status) {
             });
             paymentForm.dataset.listenerAttached = 'true';
         }
+
+        document.body.addEventListener('click', function(event) {
+            const payButton = event.target.closest('.pay-invoice-btn, .pay-now-detail-btn');
+            if (payButton) {
+                window.showPaymentForm(payButton.dataset.invoiceId, payButton.dataset.amount);
+            }
+            
+            const viewButton = event.target.closest('.view-invoice-details');
+            if(viewButton){
+                 window.showInvoiceDetails(viewButton.dataset.invoiceId);
+            }
+        });
 
     })(); // End IIFE
 </script>
