@@ -1,617 +1,402 @@
 <?php
-// customer/includes/footer.php
-// This file holds modals and all shared JavaScript for the customer dashboard.
-// It will dynamically load page content from customer/pages/ via AJAX.
+// customer/pages/payment-methods.php
+
+// Ensure session is started and user is logged in
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/session.php';
+
+if (!is_logged_in()) {
+    echo '<div class="text-red-500 text-center p-8">You must be logged in to view this content.</div>';
+    exit;
+}
+
+$user_id = $_SESSION['user_id'];
+
+// Fetch saved payment methods from the database
+$saved_payment_methods = [];
+// Select all necessary fields to pass to frontend for editing
+$stmt = $conn->prepare("SELECT id, braintree_payment_token, card_type, last_four, expiration_month, expiration_year, cardholder_name, is_default, billing_address FROM user_payment_methods WHERE user_id = ? ORDER BY is_default DESC, created_at DESC");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$result = $stmt->get_result();
+while($row = $result->fetch_assoc()) {
+    // Ensure expiration_month and expiration_year are not null before substr/htmlspecialchars
+    $expMonth = htmlspecialchars($row['expiration_month'] ?? '');
+    // Using ?? '' before substr for safety, then htmlspecialchars for output
+    $expYearFull = htmlspecialchars($row['expiration_year'] ?? '');
+    $expYearLastTwo = substr($expYearFull, -2);
+    $row['expiry_display'] = $expMonth . '/' . $expYearLastTwo;
+
+    // Ensure last_four is not null for card_last_four display
+    $row['card_last_four'] = htmlspecialchars($row['last_four'] ?? '');
+    // Add raw expiry parts for populating edit form
+    $row['raw_expiration_month'] = htmlspecialchars($row['expiration_month'] ?? '');
+    $row['raw_expiration_year'] = htmlspecialchars($row['expiration_year'] ?? '');
+    $row['raw_billing_address'] = htmlspecialchars($row['billing_address'] ?? '');
+
+    $row['status'] = $row['is_default'] ? 'Default' : 'Active'; // Convert boolean to string status
+    $row['token'] = $row['braintree_payment_token']; // Use Braintree token as frontend identifier
+    $saved_payment_methods[] = $row;
+}
+$stmt->close();
+
+// Close DB connection if not needed further on this page
+// $conn->close(); // Keep connection open until script ends
 ?>
 
-    <!-- Modals (Hidden by default) -->
-    <!-- Logout Confirmation Modal -->
-    <div id="logout-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded-lg shadow-xl w-96 text-gray-800">
-            <h3 class="text-xl font-bold mb-4">Confirm Logout</h3>
-            <p class="mb-6">Are you sure you want to log out?</p>
-            <div class="flex justify-end space-x-4">
-                <button class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('logout-modal')">Cancel</button>
-                <a href="/customer/logout.php" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Logout</a>
+<h1 class="text-3xl font-bold text-gray-800 mb-8">Payment Methods</h1>
+
+<div class="bg-white p-6 rounded-lg shadow-md border border-blue-200 mb-8">
+    <h2 class="text-xl font-semibold text-gray-700 mb-4 flex items-center"><i class="fas fa-credit-card mr-2 text-blue-600"></i>Saved Payment Methods</h2>
+    <?php if (empty($saved_payment_methods)): ?>
+        <p class="text-gray-600 text-center p-4">You have no saved payment methods. Add one below!</p>
+    <?php else: ?>
+        <div class="overflow-x-auto">
+            <table id="saved-payment-methods-table" class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-blue-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Cardholder Name</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Card Details</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Expiration</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Status</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <?php foreach ($saved_payment_methods as $method): ?>
+                        <tr data-id="<?php echo htmlspecialchars($method['id']); ?>"
+                            data-cardholder-name="<?php echo htmlspecialchars($method['cardholder_name']); ?>"
+                            data-last-four="<?php echo htmlspecialchars($method['card_last_four']); ?>"
+                            data-exp-month="<?php echo htmlspecialchars($method['raw_expiration_month']); ?>"
+                            data-exp-year="<?php echo htmlspecialchars($method['raw_expiration_year']); ?>"
+                            data-billing-address="<?php echo htmlspecialchars($method['raw_billing_address']); ?>"
+                            data-is-default="<?php echo htmlspecialchars($method['is_default'] ? 'true' : 'false'); ?>">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($method['cardholder_name']); ?></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars($method['card_type']); ?> ending in **** <?php echo htmlspecialchars($method['card_last_four']); ?></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars($method['expiry_display']); ?></td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $method['status'] === 'Default' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'; ?>"><?php echo htmlspecialchars($method['status']); ?></span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <button class="text-indigo-600 hover:text-indigo-900 mr-2 edit-payment-btn" data-id="<?php echo htmlspecialchars($method['id']); ?>">Edit</button>
+                                <?php if (!$method['is_default']): ?>
+                                    <button class="text-green-600 hover:text-green-900 mr-2 set-default-payment-btn" data-id="<?php echo htmlspecialchars($method['id']); ?>">Set Default</button>
+                                <?php endif; ?>
+                                <button class="text-red-600 hover:text-red-900 delete-payment-btn" data-id="<?php echo htmlspecialchars($method['id']); ?>">Delete</button>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+
+<div class="bg-white p-6 rounded-lg shadow-md border border-blue-200 max-w-2xl mx-auto">
+    <h2 class="text-xl font-semibold text-gray-700 mb-4 flex items-center"><i class="fas fa-plus-circle mr-2 text-green-600"></i>Add New Payment Method</h2>
+    <form id="add-payment-method-form">
+        <div class="mb-5">
+            <label for="new-cardholder-name" class="block text-sm font-medium text-gray-700 mb-2">Cardholder Name</label>
+            <input type="text" id="new-cardholder-name" name="cardholder_name" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+        </div>
+        <div class="mb-5">
+            <label for="new-card-number" class="block text-sm font-medium text-gray-700 mb-2">Card Number</label>
+            <input type="text" id="new-card-number" name="card_number" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="**** **** **** ****" required pattern="[0-9]{13,16}">
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+            <div>
+                <label for="new-expiry-date" class="block text-sm font-medium text-gray-700 mb-2">Expiration Date (MM/YY)</label>
+                <input type="text" id="new-expiry-date" name="expiry_date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="MM/YY" required pattern="(0[1-9]|1[0-2])\/[0-9]{2}">
+            </div>
+            <div>
+                <label for="new-cvv" class="block text-sm font-medium text-gray-700 mb-2">CVV</label>
+                <input type="text" id="new-cvv" name="cvv" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="***" required pattern="[0-9]{3,4}">
             </div>
         </div>
-    </div>
-
-    <!-- Delete Account Confirmation Modal -->
-    <div id="delete-account-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded-lg shadow-xl w-96 text-gray-800">
-            <h3 class="text-xl font-bold mb-4 text-red-600">Confirm Account Deletion</h3>
-            <p class="mb-6">This action is irreversible. Are you absolutely sure you want to delete your account?</p>
-            <div class="flex justify-end space-x-4">
-                <button class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('delete-account-modal')">Cancel</button>
-                <button class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700" id="confirm-delete-account">Delete Account</button>
-            </div>
+        <div class="mb-5">
+            <label for="new-billing-address" class="block text-sm font-medium text-gray-700 mb-2">Billing Address</label>
+            <input type="text" id="new-billing-address" name="billing_address" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="123 Example St, City, State, Zip" required>
         </div>
-    </div>
-
-    <!-- Payment Success Modal -->
-    <div id="payment-success-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded-lg shadow-xl w-96 text-center text-gray-800">
-            <i class="fas fa-check-circle text-green-500 text-6xl mb-4"></i>
-            <h3 class="text-xl font-bold mb-2">Payment Successful!</h3>
-            <p class="mb-6">Your payment has been processed successfully.</p>
-            <button class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" onclick="hideModal('payment-success-modal')">Great!</button>
+        <div class="mb-5 flex items-center">
+            <input type="checkbox" id="set-default" name="set_default" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+            <label for="set-default" class="ml-2 block text-sm text-gray-900">Set as default payment method</label>
         </div>
-    </div>
+        <div class="text-right">
+            <button type="submit" class="py-3 px-6 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-lg font-semibold">
+                <i class="fas fa-plus mr-2"></i>Add Payment Method
+            </button>
+        </div>
+    </form>
+</div>
 
-    <!-- AI Chat Modal (Customer can launch AI chat for new requests) -->
-    <div id="ai-chat-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-lg h-3/4 flex flex-col text-gray-800">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold text-gray-800" id="ai-chat-title">AI Assistant</h3>
-                <button class="text-gray-500 hover:text-gray-700 text-2xl" onclick="hideModal('ai-chat-modal')">
-                    <i class="fas fa-times"></i>
-                </button>
+<div id="edit-payment-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md text-gray-800">
+        <h3 class="text-xl font-bold mb-4">Edit Payment Method</h3>
+        <form id="edit-payment-method-form">
+            <input type="hidden" id="edit-method-id" name="id">
+            <div class="mb-5">
+                <label for="edit-cardholder-name" class="block text-sm font-medium text-gray-700 mb-2">Cardholder Name</label>
+                <input type="text" id="edit-cardholder-name" name="cardholder_name" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
             </div>
-            <div id="ai-chat-messages" class="flex-1 overflow-y-auto border border-gray-300 rounded-lg p-4 mb-4 custom-scroll">
+            <div class="mb-5">
+                <label for="edit-card-number-display" class="block text-sm font-medium text-gray-700 mb-2">Card Number (Last 4)</label>
+                <input type="text" id="edit-card-number-display" class="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed" readonly>
+                <p class="text-xs text-gray-500 mt-1">Card number cannot be changed. To change card details, please add a new method.</p>
+            </div>
+             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                <div>
+                    <label for="edit-expiry-month" class="block text-sm font-medium text-gray-700 mb-2">Expiration Month (MM)</label>
+                    <input type="text" id="edit-expiry-month" name="expiration_month" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="MM" required pattern="(0[1-9]|1[0-2])">
                 </div>
-            <div class="flex">
-                <input type="text" id="ai-chat-input" placeholder="Type your message..." class="flex-1 p-3 border border-gray-300 rounded-l-lg focus:ring-blue-500 focus:border-blue-500">
-                <button id="ai-chat-send-btn" class="px-4 py-3 bg-blue-600 text-white rounded-r-lg hover:bg-blue-700 transition-colors duration-200">Send</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Custom Confirmation Modal (NEW) -->
-    <div id="confirmation-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded-lg shadow-xl w-96 text-gray-800">
-            <h3 class="text-xl font-bold mb-4" id="confirmation-modal-title">Confirm Action</h3>
-            <p class="mb-6" id="confirmation-modal-message">Are you sure you want to proceed with this action?</p>
-            <div class="flex justify-end space-x-4">
-                <button class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" id="confirmation-modal-cancel">Cancel</button>
-                <button class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700" id="confirmation-modal-confirm">Confirm</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Tutorial Overlay -->
-    <div id="tutorial-overlay" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-11/12 max-w-3xl text-gray-800">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4" id="tutorial-title">Welcome to Your Dashboard!</h2>
-            <p class="text-gray-700 mb-6" id="tutorial-text">
-                This short tour will guide you through the key features of your <?php echo htmlspecialchars($companyName); ?> Customer Dashboard.
-            </p>
-            <div class="flex justify-between items-center">
-                <button id="tutorial-prev-btn" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 hidden">
-                    <i class="fas fa-arrow-left mr-2"></i>Previous
-                </button>
-                <button id="tutorial-next-btn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                    Next <i class="fas fa-arrow-right ml-2"></i>
-                </button>
-                <button id="tutorial-end-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-                    End Tutorial
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Relocation Request Modal -->
-    <div id="relocation-request-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded-lg shadow-xl w-96 text-gray-800">
-            <h3 class="text-xl font-bold mb-4">Request Relocation</h3>
-            <p class="mb-4">Fixed relocation charge: <span class="font-bold text-blue-600">$40.00</span></p>
-            <div class="mb-5">
-                <label for="relocation-address" class="block text-sm font-medium text-gray-700 mb-2">New Destination Address</label>
-                <input type="text" id="relocation-address" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Enter new address" required>
-            </div>
-            <div class="flex justify-end space-x-4">
-                <button class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('relocation-request-modal')">Cancel</button>
-                <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700" onclick="confirmRelocation()">Confirm Relocation</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Swap Request Modal -->
-    <div id="swap-request-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded-lg shadow-xl w-96 text-gray-800">
-            <h3 class="text-xl font-bold mb-4">Request Equipment Swap</h3>
-            <p class="mb-4">Fixed swap charge: <span class="font-bold text-blue-600">$30.00</span></p>
-            <p class="mb-6">Are you sure you want to request an equipment swap for this booking?</p>
-            <div class="flex justify-end space-x-4">
-                <button class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('swap-request-modal')">Cancel</button>
-                <button class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700" onclick="confirmSwap()">Confirm Swap</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Pickup Request Modal -->
-    <div id="pickup-request-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded-lg shadow-xl w-96 text-gray-800">
-            <h3 class="text-xl font-bold mb-4">Schedule Pickup</h3>
-            <div class="mb-5">
-                <label for="pickup-date" class="block text-sm font-medium text-gray-700 mb-2">Preferred Pickup Date</label>
-                <input type="date" id="pickup-date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+                <div>
+                    <label for="edit-expiry-year" class="block text-sm font-medium text-gray-700 mb-2">Expiration Year (YYYY)</label>
+                    <input type="text" id="edit-expiry-year" name="expiration_year" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="YYYY" required pattern="[0-9]{4}">
+                </div>
             </div>
             <div class="mb-5">
-                <label for="pickup-time" class="block text-sm font-medium text-gray-700 mb-2">Preferred Pickup Time</label>
-                <input type="time" id="pickup-time" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+                <label for="edit-billing-address" class="block text-sm font-medium text-gray-700 mb-2">Billing Address</label>
+                <input type="text" id="edit-billing-address" name="billing_address" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+            </div>
+            <div class="mb-5 flex items-center">
+                <input type="checkbox" id="edit-set-default" name="set_default" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                <label for="edit-set-default" class="ml-2 block text-sm text-gray-900">Set as default payment method</label>
             </div>
             <div class="flex justify-end space-x-4">
-                <button class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('pickup-request-modal')">Cancel</button>
-                <button class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700" onclick="confirmPickup()">Schedule Pickup</button>
+                <button type="button" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('edit-payment-modal')">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">Save Changes</button>
             </div>
-        </div>
+        </form>
     </div>
+</div>
 
 
-    <script>
-        // --- Global Helper Functions ---
-        function showModal(modalId) {
-            document.getElementById(modalId).classList.remove('hidden');
-        }
-
-        function hideModal(modalId) {
-            document.getElementById(modalId).classList.add('hidden');
-        }
-
-        function showToast(message, type = 'info') {
-            const toastContainer = document.getElementById('toast-container') || (() => {
-                const div = document.createElement('div');
-                div.id = 'toast-container';
-                div.className = 'fixed bottom-4 right-4 z-50 space-y-2';
-                document.body.appendChild(div);
-                return div;
-            })();
-
-            const toast = document.createElement('div');
-            let bgColor = 'bg-blue-500';
-            if (type === 'success') bgColor = 'bg-green-500';
-            if (type === 'error') bgColor = 'bg-red-500';
-            if (type === 'warning') bgColor = 'bg-orange-500';
-
-            toast.className = `p-3 rounded-lg shadow-lg text-white ${bgColor} transform transition-transform duration-300 ease-out translate-y-full opacity-0`;
-            toast.textContent = message;
-
-            toastContainer.appendChild(toast);
-
-            setTimeout(() => {
-                toast.classList.remove('translate-y-full', 'opacity-0');
-                toast.classList.add('translate-y-0', 'opacity-100');
-            }, 10);
-
-            setTimeout(() => {
-                toast.classList.remove('translate-y-0', 'opacity-100');
-                toast.classList.add('translate-y-full', 'opacity-0');
-                toast.addEventListener('transitionend', () => toast.remove());
-            }, 3000);
-        }
-
-        // --- Custom Confirmation Modal Logic ---
-        let confirmationCallback = null;
-
-        /**
-         * Displays a custom confirmation modal.
-         * @param {string} title The title of the modal.
-         * @param {string} message The message to display.
-         * @param {function(boolean): void} callback A function to call with true (confirmed) or false (cancelled).
-         * @param {string} confirmBtnText Text for the confirm button (default 'Confirm').
-         * @param {string} confirmBtnColor Tailwind CSS class for confirm button background (default 'bg-red-600').
-         */
-        function showConfirmationModal(title, message, callback, confirmBtnText = 'Confirm', confirmBtnColor = 'bg-red-600') {
-            document.getElementById('confirmation-modal-title').textContent = title;
-            document.getElementById('confirmation-modal-message').textContent = message;
-            const confirmBtn = document.getElementById('confirmation-modal-confirm');
-            confirmBtn.textContent = confirmBtnText;
-            // Reset and set color class (remove previous color classes first)
-            confirmBtn.classList.remove('bg-red-600', 'bg-green-600', 'bg-blue-600', 'bg-orange-600', 'bg-indigo-600', 'bg-purple-600', 'bg-teal-600'); // Add any other btn colors used
-            confirmBtn.classList.add(confirmBtnColor);
-            
-            confirmationCallback = callback; // Store the callback function
-            showModal('confirmation-modal');
-        }
-
-        document.getElementById('confirmation-modal-confirm').addEventListener('click', () => {
-            hideModal('confirmation-modal');
-            if (confirmationCallback) {
-                confirmationCallback(true); // Execute callback with true for confirmation
-            }
-            confirmationCallback = null; // Clear the callback
-        });
-
-        document.getElementById('confirmation-modal-cancel').addEventListener('click', () => {
-            hideModal('confirmation-modal');
-            if (confirmationCallback) {
-                confirmationCallback(false); // Execute callback with false for cancellation
-            }
-            confirmationCallback = null; // Clear the callback
-        });
-
-
-        // --- Core Navigation and Content Loading Logic ---
-        const contentArea = document.getElementById('content-area'); // Assuming this ID is in dashboard.php
-        const navLinksDesktop = document.querySelectorAll('.nav-link-desktop');
-        const navLinksMobile = document.querySelectorAll('.nav-link-mobile');
-        const welcomePrompt = document.getElementById('welcome-prompt');
-
-        /**
-         * Loads content into the main content area dynamically via AJAX.
-         * @param {string} sectionId The ID of the section to load (e.g., 'dashboard', 'bookings').
-         * @param {object} [params={}] Optional parameters to pass to the loaded page (e.g., booking_id).
-         */
-        async function loadSection(sectionId, params = {}) {
-            let url = `/customer/pages/${sectionId}.php`;
-            let queryString = new URLSearchParams(params).toString();
-            if (queryString) {
-                url += '?' + queryString;
+<script>
+    // IIFE to encapsulate the script and prevent global variable conflicts
+    (function() {
+        // Client-side validation for expiration date (MM/YY)
+        function isValidExpiryDate(month, year) {
+            if (!/^(0[1-9]|1[0-2])$/.test(month) || !/^\d{4}$/.test(year)) {
+                return false;
             }
 
-            // Handle special cases first
-            if (sectionId === 'logout') {
-                showModal('logout-modal');
-                return;
-            } else if (sectionId === 'delete-account') {
-                showModal('delete-account-modal');
-                return;
+            const currentYear = new Date().getFullYear();
+            const currentMonth = new Date().getMonth() + 1; // Month is 0-indexed
+
+            const expMonth = parseInt(month, 10);
+            const expYear = parseInt(year, 10);
+
+            if (expYear < currentYear) {
+                return false; // Expired year
             }
+            if (expYear === currentYear && expMonth < currentMonth) {
+                return false; // Expired month in current year
+            }
+            return true;
+        }
 
-            try {
-                // Show a loading indicator in content area
-                contentArea.innerHTML = `
-                    <div class="flex items-center justify-center h-full min-h-[300px] text-gray-500 text-lg">
-                        <i class="fas fa-spinner fa-spin mr-3 text-blue-500 text-2xl"></i> Loading ${sectionId.replace('-', ' ')}...
-                    </div>
-                `;
+        // --- Add Payment Method Form Handling ---
+        const addPaymentMethodForm = document.getElementById('add-payment-method-form');
+        if (addPaymentMethodForm) {
+            addPaymentMethodForm.addEventListener('submit', async function(event) {
+                event.preventDefault(); // Prevent default form submission
 
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                const cardNumber = document.getElementById('new-card-number').value.trim();
+                const expiryDate = document.getElementById('new-expiry-date').value.trim(); // MM/YY format
+                const cvv = document.getElementById('new-cvv').value.trim();
+                const cardholderName = document.getElementById('new-cardholder-name').value.trim();
+                const billingAddress = document.getElementById('new-billing-address').value.trim();
+
+                // Client-side validation
+                if (!cardholderName || !cardNumber || !expiryDate || !cvv || !billingAddress) {
+                    window.showToast('Please fill in all fields.', 'error');
+                    return;
                 }
-                const htmlContent = await response.text();
-                contentArea.innerHTML = htmlContent;
-
-                // Update active class for desktop links
-                navLinksDesktop.forEach(link => link.classList.remove('bg-blue-700', 'text-white'));
-                const activeLinkDesktop = document.querySelector(`.nav-link-desktop[data-section="${sectionId}"]`);
-                if (activeLinkDesktop) {
-                    activeLinkDesktop.classList.add('bg-blue-700', 'text-white');
+                if (!/^\d{13,16}$/.test(cardNumber.replace(/\s/g, ''))) { // Remove spaces for validation
+                    window.showToast('Please enter a valid card number (13-16 digits).', 'error');
+                    return;
                 }
 
-                // Update active class for mobile links
-                navLinksMobile.forEach(link => link.classList.remove('bg-blue-700', 'text-white'));
-                const activeLinkMobile = document.querySelector(`.nav-link-mobile[data-section="${sectionId}"]`);
-                if (activeLinkMobile) {
-                    activeLinkMobile.classList.add('bg-blue-700', 'text-white');
+                const expiryParts = expiryDate.split('/');
+                if (expiryParts.length !== 2 || !isValidExpiryDate(expiryParts[0], '20' + expiryParts[1])) { // Assuming YY is 2-digit, convert to 4
+                    window.showToast('Please enter a valid expiration date (MM/YY) that is not expired.', 'error');
+                    return;
+                }
+                if (!/^\d{3,4}$/.test(cvv)) {
+                    window.showToast('Please enter a valid CVV (3 or 4 digits).', 'error');
+                    return;
                 }
 
-                // Push state to history for back/forward navigation
-                history.pushState({ section: sectionId, params: params }, '', `#${sectionId}`);
+                window.showToast('Adding new payment method...', 'info');
 
-                // Re-run scripts in the loaded content if any (common for dynamic content)
-                // This will re-attach listeners for dynamically loaded pages.
-                const loadedScripts = contentArea.querySelectorAll('script');
-                loadedScripts.forEach(script => {
-                    const newScript = document.createElement('script');
-                    Array.from(script.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
-                    newScript.appendChild(document.createTextNode(script.innerHTML));
-                    script.parentNode.replaceChild(newScript, script);
-                });
+                const formData = new FormData(this); // Get all form data
+                formData.append('action', 'add_method');
 
+                try {
+                    const response = await fetch('/api/customer/payment_methods.php', {
+                        method: 'POST',
+                        body: formData
+                    });
 
-            } catch (error) {
-                console.error('Error loading section:', error);
-                contentArea.innerHTML = `
-                    <div class="flex flex-col items-center justify-center h-full min-h-[300px] text-red-500 text-lg">
-                        <i class="fas fa-exclamation-triangle mr-3 text-red-600 text-2xl"></i>
-                        Failed to load section: ${sectionId.replace('-', ' ')}. Please try again.
-                        <p class="text-sm text-gray-500 mt-2">Details: ${error.message}</p>
-                    </div>
-                `;
-                showToast(`Failed to load ${sectionId.replace('-', ' ')}`, 'error');
-            }
-        }
+                    const result = await response.json();
 
-        // Add event listeners to navigation links (desktop and mobile)
-        navLinksDesktop.forEach(link => {
-            link.addEventListener('click', function(event) {
-                event.preventDefault(); // Prevent default link behavior
-                const section = this.dataset.section;
-                loadSection(section);
-            });
-        });
-
-        navLinksMobile.forEach(link => {
-            link.addEventListener('click', function(event) {
-                event.preventDefault(); // Prevent default link behavior
-                const section = this.dataset.section;
-                loadSection(section);
-            });
-        });
-
-        // Handle browser back/forward buttons
-        window.addEventListener('popstate', (event) => {
-            if (event.state && event.state.section) {
-                loadSection(event.state.section, event.state.params);
-            } else {
-                loadSection('dashboard'); // Default to dashboard if no state
-            }
-        });
-
-
-        // --- Welcome Prompt (Initial Dashboard Load) ---
-        function showWelcomePrompt() {
-            // userName is already set in header.php from PHP session
-            const userName = "<?php echo $_SESSION['user_first_name'] ?? 'Customer'; ?>";
-            welcomePrompt.textContent = `Welcome back, ${userName}!`;
-            showToast(`Welcome back, ${userName}! Explore your dashboard.`, 'info');
-        }
-
-
-        // --- AI Chat Logic for Service Request Button ---
-        /**
-         * Launches the AI Chat Modal and optionally pre-populates based on service type.
-         * Note: This connects to the homepage's AI chat endpoint (api/openai_chat.php)
-         * to allow customer to initiate new AI-driven bookings/junk removal.
-         * @param {string} serviceType 'create-booking' or 'junk-removal-service'
-         */
-        let aiChatHistory = []; // Local history for AI chat modal, separate from main chat.
-
-        function addAIChatMessage(message, sender) {
-            const aiChatMessagesDiv = document.getElementById('ai-chat-messages');
-            const messageDiv = document.createElement('div');
-            messageDiv.classList.add('text-gray-700', 'mb-2');
-            if (sender === 'user') {
-                messageDiv.classList.add('text-right');
-                messageDiv.innerHTML = `<span class="font-semibold text-green-600">You:</span> ${message}`;
-            } else {
-                messageDiv.innerHTML = `<span class="font-semibold text-blue-600">AI:</span> ${message}`;
-            }
-            aiChatMessagesDiv.appendChild(messageDiv);
-            aiChatMessagesDiv.scrollTop = aiChatMessagesDiv.scrollHeight;
-        }
-
-        async function sendAIChatMessageToApi(message, serviceType) {
-            const aiChatInput = document.getElementById('ai-chat-input');
-            const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
-            const aiChatMessagesDiv = document.getElementById('ai-chat-messages');
-
-            // Show loading dots
-            const loadingDiv = document.createElement('div');
-            loadingDiv.classList.add('text-gray-700', 'mb-2');
-            loadingDiv.innerHTML = '<span class="font-semibold text-blue-600">AI:</span> <i class="fas fa-spinner fa-spin text-blue-500"></i>';
-            aiChatMessagesDiv.appendChild(loadingDiv);
-            aiChatMessagesDiv.scrollTop = aiChatMessagesDiv.scrollHeight;
-            aiChatInput.disabled = true;
-            aiChatSendBtn.disabled = true;
-
-            const formData = new FormData();
-            formData.append('message', message);
-            // Potentially add a serviceType hint to the backend if needed for initial prompt setup
-            formData.append('initial_service_type', serviceType); // Send this if AI needs a hint for first turn
-
-            try {
-                const response = await fetch('/api/openai_chat.php', { // Endpoint to AI chat from homepage
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-
-                // Remove loading dots
-                aiChatMessagesDiv.removeChild(loadingDiv);
-
-                addAIChatMessage(data.ai_response, 'ai');
-
-                if (data.is_info_collected) {
-                    addAIChatMessage("Your request has been submitted and your account updated! Our team will get back to you with a quote shortly.", 'ai');
-                    aiChatInput.value = '';
-                    aiChatInput.disabled = true;
-                    aiChatSendBtn.disabled = true;
-                    showToast("Service request submitted successfully! Check your dashboard for updates.", 'success');
-                    // Optionally refresh the dashboard or relevant section after submission
-                    // loadSection('dashboard');
-                } else {
-                    aiChatInput.disabled = false;
-                    aiChatSendBtn.disabled = false;
-                    aiChatInput.focus();
-                }
-
-            } catch (error) {
-                console.error('Error in AI chat:', error);
-                // Remove loading dots
-                aiChatMessagesDiv.removeChild(loadingDiv);
-                addAIChatMessage('Sorry, there was an error processing your request. Please try again.', 'ai');
-                aiChatInput.disabled = false;
-                aiChatSendBtn.disabled = false;
-            }
-        }
-
-        function showAIChat(serviceType) {
-            const aiChatTitle = document.getElementById('ai-chat-title');
-            const aiChatMessagesDiv = document.getElementById('ai-chat-messages');
-            const aiChatInput = document.getElementById('ai-chat-input');
-            const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
-
-            aiChatMessagesDiv.innerHTML = ''; // Clear previous messages
-            aiChatInput.value = '';
-            aiChatInput.disabled = false;
-            aiChatSendBtn.disabled = false;
-
-            if (serviceType === 'create-booking') {
-                aiChatTitle.textContent = 'AI Assistant - Create Booking';
-                addAIChatMessage("Hello! I can help you create a new equipment booking. Are you looking for a dumpster, temporary toilet, storage container, or handwash station? Is this for residential or commercial use?", 'ai');
-            } else if (serviceType === 'junk-removal-service') {
-                aiChatTitle.textContent = 'AI Assistant - Junk Removal';
-                addAIChatMessage("Hello! I can help you with junk removal. Please describe the items you need removed, or even better, upload some images or a short video!", 'ai');
-            }
-            showModal('ai-chat-modal');
-
-            // Add event listener for AI chat modal's send button
-            aiChatSendBtn.onclick = () => {
-                const message = aiChatInput.value.trim();
-                if (message) {
-                    addAIChatMessage(message, 'user');
-                    aiChatInput.value = '';
-                    sendAIChatMessageToApi(message, serviceType);
-                }
-            };
-            aiChatInput.onkeydown = (event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    aiChatSendBtn.click();
-                }
-            };
-        }
-        
-
-
-        // --- Service Request Dropdown Logic ---
-        const serviceRequestBtn = document.getElementById('service-request-btn');
-        const serviceRequestDropdown = document.getElementById('service-request-dropdown');
-
-        if(serviceRequestBtn) { // Check if element exists
-            serviceRequestBtn.addEventListener('click', function() {
-                serviceRequestDropdown.classList.toggle('hidden');
-            });
-
-            // Close dropdown if clicked outside
-            document.addEventListener('click', function(event) {
-                if (!serviceRequestBtn.contains(event.target) && !serviceRequestDropdown.contains(event.target)) {
-                    serviceRequestDropdown.classList.add('hidden');
+                    if (result.success) {
+                        window.showToast(result.message || 'Payment method added successfully!', 'success');
+                        addPaymentMethodForm.reset(); // Clear form
+                        window.loadCustomerSection('payment-methods'); // Reload the section to show the new method in the list
+                    } else {
+                        window.showToast(result.message || 'Failed to add payment method.', 'error');
+                    }
+                } catch (error) {
+                    console.error('Add payment method API Error:', error);
+                    window.showToast('An error occurred while adding payment method. Please try again.', 'error');
                 }
             });
         }
 
+        // --- Edit Payment Method Form Handling (NEW) ---
+        const editPaymentMethodForm = document.getElementById('edit-payment-method-form');
+        if (editPaymentMethodForm) {
+            editPaymentMethodForm.addEventListener('submit', async function(event) {
+                event.preventDefault();
 
-        // --- General Request functions for Modals (Relocation, Swap, Pickup) ---
-        // These will be called from loaded 'bookings' page content, so they need to be global or attached to window
-        window.confirmRelocation = function() {
-            const newAddress = document.getElementById('relocation-address').value;
-            if (newAddress) {
-                hideModal('relocation-request-modal');
-                // In a real app, send this request via AJAX to a backend endpoint
-                showToast(`Relocation to "${newAddress}" requested successfully! Charges: $40.00 (Dummy)`, 'success');
-            } else {
-                showToast('Please enter a new destination address.', 'error');
-            }
-        }
+                const methodId = document.getElementById('edit-method-id').value;
+                const cardholderName = document.getElementById('edit-cardholder-name').value.trim();
+                const expirationMonth = document.getElementById('edit-expiry-month').value.trim();
+                const expirationYear = document.getElementById('edit-expiry-year').value.trim(); // YYYY format
+                const billingAddress = document.getElementById('edit-billing-address').value.trim();
+                const setDefault = document.getElementById('edit-set-default').checked;
 
-        window.confirmSwap = function() {
-            hideModal('swap-request-modal');
-            // In a real app, send this request via AJAX to a backend endpoint
-                showToast('Equipment swap requested successfully! Charges: $30.00 (Dummy)', 'success');
-        }
+                // Client-side validation for edit form
+                if (!cardholderName || !expirationMonth || !expirationYear || !billingAddress) {
+                    window.showToast('Please fill in all fields.', 'error');
+                    return;
+                }
+                if (!isValidExpiryDate(expirationMonth, expirationYear)) {
+                    window.showToast('Please enter a valid expiration date (MM/YYYY) that is not expired.', 'error');
+                    return;
+                }
 
-        window.confirmPickup = function() {
-            const pickupDate = document.getElementById('pickup-date').value;
-            const pickupTime = document.getElementById('pickup-time').value;
-            if (pickupDate && pickupTime) {
-                hideModal('pickup-request-modal');
-                // In a real app, send this request via AJAX to a backend endpoint
-                showToast(`Pickup scheduled for ${pickupDate} at ${pickupTime}. (Dummy)`, 'success');
-            } else {
-                showToast('Please select a preferred pickup date and time.', 'error');
-            }
-        }
+                window.showToast('Saving changes...', 'info');
 
-        // --- Tutorial Logic ---
-        const tutorialSteps = [
-            {
-                title: "Welcome to Your Dashboard!",
-                text: "This short tour will guide you through the key features of your <?php echo htmlspecialchars($companyName); ?> Customer Dashboard. Click 'Next' to continue."
-            },
-            {
-                title: "Navigation Menu",
-                text: "On the left (desktop) or bottom (mobile), you'll find the main navigation menu. Click any item to explore different sections like 'Equipment Bookings', 'Invoices', and 'Edit Profile'."
-            },
-            {
-                title: "Quick Statistics",
-                text: "The main dashboard area provides a quick overview of your active bookings, pending items, and invoice statuses."
-            },
-            {
-                title: "Service Requests",
-                text: "Use the 'Service Request' button at the top right to quickly initiate new bookings or general junk removal services via our AI chat."
-            },
-            {
-                title: "Notifications",
-                text: "The bell icon shows your unread notifications. Click it to view important updates and messages."
-            },
-            {
-                title: "Booking Details & Tracking",
-                text: "In the 'Equipment Bookings' section, click 'View Details' for any booking to see its status timeline, driver tracking (if available), and contact options."
-            },
-            {
-                title: "Relocation, Swap, and Pickup Requests",
-                text: "For delivered dumpsters, you can directly request relocation, swap, or schedule a pickup from within the booking details page."
-            },
-            {
-                title: "Account Management",
-                text: "Manage your personal information, change your password, and update payment methods in the 'Edit Profile', 'Change Password', and 'Payment Methods' sections."
-            },
-            {
-                title: "End of Tutorial",
-                text: "That's it for the tour! You can always restart the tutorial by clicking the 'Start Tutorial' button in the top right. Enjoy using your dashboard!"
-            }
-        ];
-        let currentTutorialStep = 0;
+                const formData = new FormData();
+                formData.append('action', 'update_method'); // New action for the API
+                formData.append('id', methodId);
+                formData.append('cardholder_name', cardholderName);
+                formData.append('expiration_month', expirationMonth);
+                formData.append('expiration_year', expirationYear);
+                formData.append('billing_address', billingAddress);
+                formData.append('set_default', setDefault ? 'on' : 'off'); // Send 'on' or 'off' as expected by PHP
 
-        const tutorialOverlay = document.getElementById('tutorial-overlay');
-        const tutorialTitle = document.getElementById('tutorial-title');
-        const tutorialText = document.getElementById('tutorial-text');
-        const tutorialPrevBtn = document.getElementById('tutorial-prev-btn');
-        const tutorialNextBtn = document.getElementById('tutorial-next-btn');
-        const tutorialEndBtn = document.getElementById('tutorial-end-btn');
-        const startTutorialBtn = document.getElementById('start-tutorial-btn');
+                try {
+                    const response = await fetch('/api/customer/payment_methods.php', {
+                        method: 'POST',
+                        body: formData
+                    });
 
-        function showTutorialStep(stepIndex) {
-            if (stepIndex >= 0 && stepIndex < tutorialSteps.length) {
-                currentTutorialStep = stepIndex;
-                tutorialTitle.textContent = tutorialSteps[stepIndex].title;
-                tutorialText.textContent = tutorialSteps[stepIndex].text;
+                    const result = await response.json();
 
-                tutorialPrevBtn.classList.toggle('hidden', currentTutorialStep === 0);
-                tutorialNextBtn.classList.toggle('hidden', currentTutorialStep === tutorialSteps.length - 1);
-                tutorialEndBtn.textContent = (currentTutorialStep === tutorialSteps.length - 1) ? 'Got It!' : 'End Tutorial';
-
-                showModal('tutorial-overlay');
-            }
-        }
-        window.startTutorial = function() { showTutorialStep(0); } // Make global
-
-        if(startTutorialBtn) { // Ensure button exists before attaching listener
-            startTutorialBtn.addEventListener('click', window.startTutorial);
-        }
-
-        if(tutorialNextBtn) {
-            tutorialNextBtn.addEventListener('click', () => {
-                if (currentTutorialStep < tutorialSteps.length - 1) {
-                    showTutorialStep(currentTutorialStep + 1);
+                    if (result.success) {
+                        window.showToast(result.message || 'Payment method updated successfully!', 'success');
+                        window.hideModal('edit-payment-modal'); // Hide the modal on success
+                        window.loadCustomerSection('payment-methods'); // Reload to reflect changes
+                    } else {
+                        window.showToast(result.message || 'Failed to update payment method.', 'error');
+                    }
+                } catch (error) {
+                    console.error('Update payment method API Error:', error);
+                    window.showToast('An error occurred while updating payment method. Please try again.', 'error');
                 }
             });
         }
 
-        if(tutorialPrevBtn) {
-            tutorialPrevBtn.addEventListener('click', () => {
-                if (currentTutorialStep > 0) {
-                    showTutorialStep(currentTutorialStep - 1);
+        // --- Event listeners for table buttons (Edit, Set Default, Delete) ---
+        document.addEventListener('click', async function(event) {
+            // Handle "Edit" button click
+            if (event.target.classList.contains('edit-payment-btn')) {
+                const row = event.target.closest('tr');
+                document.getElementById('edit-method-id').value = row.dataset.id;
+                document.getElementById('edit-cardholder-name').value = row.dataset.cardholderName;
+                document.getElementById('edit-card-number-display').value = '**** **** **** ' + row.dataset.lastFour;
+                document.getElementById('edit-expiry-month').value = row.dataset.expMonth;
+                document.getElementById('edit-expiry-year').value = row.dataset.expYear; // Full 4-digit year
+                document.getElementById('edit-billing-address').value = row.dataset.billingAddress;
+                document.getElementById('edit-set-default').checked = (row.dataset.isDefault === 'true');
+                window.showModal('edit-payment-modal');
+            }
+
+            // Handle "Set Default" button click
+            if (event.target.classList.contains('set-default-payment-btn')) {
+                const methodId = event.target.dataset.id;
+                window.showConfirmationModal(
+                    'Set Default Payment Method',
+                    'Are you sure you want to set this as your default payment method?',
+                    async (confirmed) => {
+                        if (confirmed) {
+                            window.showToast('Setting default payment method...', 'info');
+                            const formData = new FormData();
+                            formData.append('action', 'set_default');
+                            formData.append('id', methodId);
+
+                            try {
+                                const response = await fetch('/api/customer/payment_methods.php', {
+                                    method: 'POST',
+                                    body: formData
+                                });
+                                const result = await response.json();
+                                if (result.success) {
+                                    window.showToast(result.message || 'Default payment method updated!', 'success');
+                                    window.loadCustomerSection('payment-methods'); // Reload to reflect changes
+                                } else {
+                                    window.showToast(result.message || 'Failed to set default payment method.', 'error');
+                                }
+                            } catch (error) {
+                                console.error('Set default payment method API Error:', error);
+                                window.showToast('An error occurred. Please try again.', 'error');
+                            }
+                        }
+                    },
+                    'Set Default', // Confirm button text
+                    'bg-green-600' // Confirm button color
+                );
+            }
+
+            // Handle "Delete" button click
+            if (event.target.classList.contains('delete-payment-btn')) {
+                const methodId = event.target.dataset.id;
+                window.showConfirmationModal(
+                    'Delete Payment Method',
+                    'Are you sure you want to delete this payment method? This action cannot be undone.',
+                    async (confirmed) => {
+                        if (confirmed) {
+                            window.showToast('Deleting payment method...', 'info');
+                            const formData = new FormData();
+                            formData.append('action', 'delete_method');
+                            formData.append('id', methodId);
+
+                            try {
+                                const response = await fetch('/api/customer/payment_methods.php', {
+                                    method: 'POST',
+                                    body: formData
+                                });
+                                const result = await response.json();
+                                if (result.success) {
+                                    window.showToast(result.message || 'Payment method deleted!', 'success');
+                                    window.loadCustomerSection('payment-methods'); // Reload to reflect changes
+                                } else {
+                                    window.showToast(result.message || 'Failed to delete payment method.', 'error');
+                                    }
+                                } catch (error) {
+                                    console.error('Delete payment method API Error:', error);
+                                    window.showToast('An error occurred. Please try again.', 'error');
+                                }
+                            }
+                        },
+                        'Delete', // Confirm button text
+                        'bg-red-600' // Confirm button color
+                    );
                 }
             });
-        }
-
-        if(tutorialEndBtn) {
-            tutorialEndBtn.addEventListener('click', () => {
-                hideModal('tutorial-overlay');
-            });
-        }
-
-
-        // Load the dashboard content by default when the page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            // Check for hash in URL to load specific section, otherwise default to dashboard
-            const initialHash = window.location.hash.substring(1);
-            if (initialHash && document.querySelector(`.nav-link-desktop[data-section="${initialHash}"]`)) {
-                loadSection(initialHash);
-            } else {
-                loadSection('dashboard');
-            }
-
-            // Show welcome prompt on first visit (using sessionStorage)
-            if (!sessionStorage.getItem('welcomeShown')) {
-                showWelcomePrompt();
-                sessionStorage.setItem('welcomeShown', 'true');
-            }
-        });
-    </script>
+        })(); // End of IIFE
