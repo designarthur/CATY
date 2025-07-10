@@ -7,7 +7,7 @@ if (session_status() == PHP_SESSION_NONE) {
 }
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/session.php';
-require_once __DIR__ . '/../../includes/functions.php'; // Needed for CSRF
+require_once __DIR__ . '/../../includes/functions.php';
 
 if (!is_logged_in() || !has_role('customer')) {
     echo '<div class="text-red-500 text-center p-8">Unauthorized access.</div>';
@@ -21,17 +21,12 @@ $user_id = $_SESSION['user_id'];
 $quotes = [];
 $expanded_quote_id = $_GET['quote_id'] ?? null;
 
+// The main query remains the same as it fetches the parent quote record
 $query = "SELECT
             q.id, q.service_type, q.status, q.created_at, q.location, q.quoted_price, q.admin_notes, q.customer_type,
-            q.delivery_date, q.delivery_time, q.removal_date, q.removal_time, q.live_load_needed, q.is_urgent, q.driver_instructions,
-            jrd.junk_items_json, jrd.recommended_dumpster_size, jrd.additional_comment, jrd.media_urls_json,
-            qed.equipment_name, qed.quantity, qed.specific_needs, qed.duration_days
+            q.delivery_date, q.delivery_time, q.removal_date, q.removal_time, q.live_load_needed, q.is_urgent, q.driver_instructions
           FROM
             quotes q
-          LEFT JOIN
-            junk_removal_details jrd ON q.id = jrd.quote_id
-          LEFT JOIN
-            quote_equipment_details qed ON q.id = qed.quote_id
           WHERE
             q.user_id = ?
           ORDER BY q.created_at DESC";
@@ -41,12 +36,46 @@ $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $result = $stmt->get_result();
 
+$quote_ids = [];
 while ($row = $result->fetch_assoc()) {
-    $row['junk_items_json'] = json_decode($row['junk_items_json'] ?? '[]', true);
-    $row['media_urls_json'] = json_decode($row['media_urls_json'] ?? '[]', true);
-    $quotes[] = $row;
+    $quotes[$row['id']] = $row;
+    $quote_ids[] = $row['id'];
 }
 $stmt->close();
+
+// Now, fetch all related equipment and junk details for the retrieved quotes
+if (!empty($quote_ids)) {
+    $in_clause = implode(',', array_fill(0, count($quote_ids), '?'));
+    
+    // Fetch equipment details
+    $eq_query = "SELECT quote_id, equipment_name, quantity, duration_days, specific_needs FROM quote_equipment_details WHERE quote_id IN ($in_clause)";
+    $eq_stmt = $conn->prepare($eq_query);
+    $eq_stmt->bind_param(str_repeat('i', count($quote_ids)), ...$quote_ids);
+    $eq_stmt->execute();
+    $eq_result = $eq_stmt->get_result();
+    while ($eq_row = $eq_result->fetch_assoc()) {
+        if (!isset($quotes[$eq_row['quote_id']]['equipment_details'])) {
+            $quotes[$eq_row['quote_id']]['equipment_details'] = [];
+        }
+        $quotes[$eq_row['quote_id']]['equipment_details'][] = $eq_row;
+    }
+    $eq_stmt->close();
+    
+    // Fetch junk details
+    $junk_query = "SELECT quote_id, junk_items_json, recommended_dumpster_size, additional_comment, media_urls_json FROM junk_removal_details WHERE quote_id IN ($in_clause)";
+    $junk_stmt = $conn->prepare($junk_query);
+    $junk_stmt->bind_param(str_repeat('i', count($quote_ids)), ...$quote_ids);
+    $junk_stmt->execute();
+    $junk_result = $junk_stmt->get_result();
+    while ($junk_row = $junk_result->fetch_assoc()) {
+        $quotes[$junk_row['quote_id']]['junk_details'] = $junk_row;
+        $quotes[$junk_row['quote_id']]['junk_details']['junk_items_json'] = json_decode($junk_row['junk_items_json'] ?? '[]', true);
+        $quotes[$junk_row['quote_id']]['junk_details']['media_urls_json'] = json_decode($junk_row['media_urls_json'] ?? '[]', true);
+    }
+    $junk_stmt->close();
+}
+
+
 $conn->close();
 
 function getCustomerStatusBadgeClass($status) {
@@ -114,56 +143,26 @@ function getCustomerStatusBadgeClass($status) {
                                         </div>
                                         <div>
                                             <p><span class="font-medium">Driver Instructions:</span> <?php echo htmlspecialchars($quote['driver_instructions'] ?? 'None provided.'); ?></p>
-                                            </div>
+                                        </div>
                                     </div>
 
-                                    <?php if ($quote['service_type'] === 'equipment_rental'): ?>
+                                    <?php if ($quote['service_type'] === 'equipment_rental' && !empty($quote['equipment_details'])): ?>
                                         <h4 class="text-md font-semibold text-gray-700 mb-2">Equipment Details:</h4>
-                                        <p class="text-sm text-gray-700"><span class="font-medium">Equipment Name:</span> <?php echo htmlspecialchars($quote['equipment_name'] ?? 'N/A'); ?></p>
-                                        <p class="text-sm text-gray-700"><span class="font-medium">Quantity:</span> <?php echo htmlspecialchars($quote['quantity'] ?? 'N/A'); ?></p>
-                                        <p class="text-sm text-gray-700"><span class="font-medium">Rental Period:</span> <?php echo isset($quote['duration_days']) ? htmlspecialchars($quote['duration_days']) . ' days' : 'N/A'; ?></p>
-                                        <p class="text-sm text-gray-700"><span class="font-medium">Specific Needs:</span> <?php echo htmlspecialchars($quote['specific_needs'] ?? 'N/A'); ?></p>
-                                    <?php elseif ($quote['service_type'] === 'junk_removal'): ?>
-                                        <h4 class="text-md font-semibold text-gray-700 mb-2">Junk Removal Details:</h4>
-                                        <p class="text-sm text-gray-700 font-medium mb-1">Junk Items:</p>
-                                        <?php if (!empty($quote['junk_items_json'])): ?>
-                                            <ul class="list-disc list-inside text-sm text-gray-700 ml-4 mb-2">
-                                                <?php foreach ($quote['junk_items_json'] as $item): ?>
-                                                    <li><?php echo htmlspecialchars($item['itemType'] ?? 'N/A'); ?> (Qty: <?php echo htmlspecialchars($item['quantity'] ?? 'N/A'); ?>, Dims: <?php echo htmlspecialchars($item['estDimensions'] ?? 'N/A'); ?>, Weight: <?php echo htmlspecialchars($item['estWeight'] ?? 'N/A'); ?>)</li>
-                                                <?php endforeach; ?>
-                                            </ul>
-                                        <?php else: ?>
-                                            <p class="text-sm text-gray-700 ml-4 mb-2">No specific junk items listed.</p>
+                                        <ul class="list-disc list-inside space-y-2 pl-4">
+                                            <?php foreach ($quote['equipment_details'] as $item): ?>
+                                                <li>
+                                                    <strong><?php echo htmlspecialchars($item['quantity']); ?>x</strong> <?php echo htmlspecialchars($item['equipment_name']); ?>
+                                                    <?php if (isset($item['duration_days'])): ?>
+                                                        (for <?php echo htmlspecialchars($item['duration_days']); ?> days)
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($item['specific_needs'])): ?>
+                                                        <p class="text-xs text-gray-600 pl-5"> - Needs: <?php echo htmlspecialchars($item['specific_needs']); ?></p>
+                                                    <?php endif; ?>
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    <?php elseif ($quote['service_type'] === 'junk_removal' && !empty($quote['junk_details'])): ?>
                                         <?php endif; ?>
-                                        <p class="text-sm text-gray-700"><span class="font-medium">Recommended Dumpster Size:</span> <?php echo htmlspecialchars($quote['recommended_dumpster_size'] ?? 'N/A'); ?></p>
-                                        <p class="text-sm text-gray-700"><span class="font-medium">Additional Comment:</span> <?php echo htmlspecialchars($quote['additional_comment'] ?? 'None'); ?></p>
-
-                                        <h4 class="font-semibold text-gray-700 mt-4 mb-2">Uploaded Media:</h4>
-                                        <?php if (!empty($quote['media_urls_json'])): ?>
-                                            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                                <?php foreach ($quote['media_urls_json'] as $media_url): ?>
-                                                    <div class="relative group">
-                                                        <?php
-                                                        $fileExtension = pathinfo($media_url, PATHINFO_EXTENSION);
-                                                        $isImage = in_array(strtolower($fileExtension), ['jpg', 'jpeg', 'png', 'gif']);
-                                                        ?>
-                                                        <?php if ($isImage): ?>
-                                                            <img src="<?php echo htmlspecialchars($media_url); ?>" alt="Junk item photo" class="w-full h-24 object-cover rounded-md shadow-sm cursor-pointer" onclick="showImageModal('<?php echo htmlspecialchars($media_url); ?>');">
-                                                        <?php else: ?>
-                                                            <video controls src="<?php echo htmlspecialchars($media_url); ?>" class="w-full h-24 object-cover rounded-md shadow-sm"></video>
-                                                        <?php endif; ?>
-                                                        <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-md">
-                                                            <a href="<?php echo htmlspecialchars($media_url); ?>" target="_blank" class="text-white text-xl hover:text-blue-300" title="Open Media">
-                                                                <i class="fas fa-external-link-alt"></i>
-                                                            </a>
-                                                        </div>
-                                                    </div>
-                                                <?php endforeach; ?>
-                                            </div>
-                                        <?php else: ?>
-                                            <p class="text-gray-600">No media uploaded for this request.</p>
-                                        <?php endif; ?>
-                                    <?php endif; ?>
 
                                     <?php if ($quote['status'] === 'quoted' || $quote['status'] === 'accepted' || $quote['status'] === 'converted_to_booking'): ?>
                                         <div class="mt-6 pt-4 border-t border-gray-200">
@@ -218,133 +217,71 @@ function getCustomerStatusBadgeClass($status) {
 </div>
 
 <script>
-    function showImageModal(imageUrl) {
-        document.getElementById('image-modal-content').src = imageUrl;
-        window.showModal('image-modal');
-    }
+    (function() {
+        function showImageModal(imageUrl) {
+            document.getElementById('image-modal-content').src = imageUrl;
+            window.showModal('image-modal');
+        }
 
-    document.querySelectorAll('.view-quote-request-btn').forEach(button => {
-        button.addEventListener('click', function() {
-            const quoteId = this.dataset.id;
-            const detailsRow = document.getElementById(`quote-details-${quoteId}`);
-            detailsRow.classList.toggle('hidden');
-
-            if (detailsRow.classList.contains('hidden')) {
-                this.innerHTML = '<i class="fas fa-eye mr-1"></i>View Request';
-            } else {
-                this.innerHTML = '<i class="fas fa-eye-slash mr-1"></i>Hide Details';
-            }
+        document.querySelectorAll('.view-quote-request-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const quoteId = this.dataset.id;
+                const detailsRow = document.getElementById(`quote-details-${quoteId}`);
+                detailsRow.classList.toggle('hidden');
+                this.innerHTML = detailsRow.classList.contains('hidden') ? '<i class="fas fa-eye mr-1"></i>View Request' : '<i class="fas fa-eye-slash mr-1"></i>Hide Details';
+            });
         });
-    });
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const initialQuoteId = urlParams.get('quote_id');
-    if (initialQuoteId) {
-        const initialDetailsRow = document.getElementById(`quote-details-${initialQuoteId}`);
-        if (initialDetailsRow) {
-            initialDetailsRow.classList.remove('hidden');
-            initialDetailsRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            const viewButton = document.querySelector(`.view-quote-request-btn[data-id="${initialQuoteId}"]`);
-            if (viewButton) {
-                viewButton.innerHTML = '<i class="fas fa-eye-slash mr-1"></i>Hide Details';
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialQuoteId = urlParams.get('quote_id');
+        if (initialQuoteId) {
+            const initialDetailsRow = document.getElementById(`quote-details-${initialQuoteId}`);
+            if (initialDetailsRow) {
+                initialDetailsRow.classList.remove('hidden');
+                initialDetailsRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                const viewButton = document.querySelector(`.view-quote-request-btn[data-id="${initialQuoteId}"]`);
+                if (viewButton) viewButton.innerHTML = '<i class="fas fa-eye-slash mr-1"></i>Hide Details';
             }
         }
-    }
 
-    const csrfToken = '<?php echo $csrf_token; ?>';
+        const csrfToken = '<?php echo $csrf_token; ?>';
 
-    document.querySelectorAll('.accept-quote-btn').forEach(button => {
-        button.addEventListener('click', function() {
-            const quoteId = this.dataset.id;
-            const quotedPrice = this.dataset.price;
+        document.querySelectorAll('.accept-quote-btn, .reject-quote-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const isAccept = this.classList.contains('accept-quote-btn');
+                const quoteId = this.dataset.id;
+                const action = isAccept ? 'accept_quote' : 'reject_quote';
+                const title = isAccept ? 'Accept Quote' : 'Reject Quote';
+                const message = isAccept ? `Are you sure you want to accept this quote for $${parseFloat(this.dataset.price).toFixed(2)}? This will proceed to payment.` : 'Are you sure you want to reject this quote? This action cannot be undone.';
+                const confirmColor = isAccept ? 'bg-green-600' : 'bg-red-600';
 
-            if (typeof window.showConfirmationModal === 'function' && typeof window.showToast === 'function') {
-                window.showConfirmationModal(
-                    'Accept Quote',
-                    `Are you sure you want to accept this quote for $${parseFloat(quotedPrice).toFixed(2)}? This will proceed to payment.`,
-                    async (confirmed) => {
-                        if (confirmed) {
-                            window.showToast('Accepting quote...', 'info');
-                            const formData = new FormData();
-                            formData.append('action', 'accept_quote');
-                            formData.append('quote_id', quoteId);
-                            formData.append('csrf_token', csrfToken);
+                window.showConfirmationModal(title, message, async (confirmed) => {
+                    if (confirmed) {
+                        window.showToast('Processing...', 'info');
+                        const formData = new FormData();
+                        formData.append('action', action);
+                        formData.append('quote_id', quoteId);
+                        formData.append('csrf_token', csrfToken);
 
-                            try {
-                                const response = await fetch('/api/customer/quotes.php', {
-                                    method: 'POST',
-                                    body: formData
-                                });
-                                const result = await response.json();
-
-                                if (result.success) {
-                                    window.showToast(result.message, 'success');
-                                    if (result.invoice_id) {
-                                        window.loadCustomerSection('invoices', { invoice_id: result.invoice_id });
-                                    } else {
-                                        window.loadCustomerSection('quotes', { quote_id: quoteId });
-                                    }
+                        try {
+                            const response = await fetch('/api/customer/quotes.php', { method: 'POST', body: formData });
+                            const result = await response.json();
+                            if (result.success) {
+                                window.showToast(result.message, 'success');
+                                if (isAccept && result.invoice_id) {
+                                    window.loadCustomerSection('invoices', { invoice_id: result.invoice_id });
                                 } else {
-                                    window.showToast(result.message, 'error');
-                                }
-                            } catch (error) {
-                                console.error('Accept quote API Error:', error);
-                                window.showToast('An error occurred. Please try again.', 'error');
-                            }
-                        }
-                    },
-                    'Accept Quote',
-                    'bg-green-600'
-                );
-            } else {
-                console.error('showConfirmationModal or showToast not found.');
-                alert('Functionality not fully loaded. Please check console.');
-            }
-        });
-    });
-
-    document.querySelectorAll('.reject-quote-btn').forEach(button => {
-        button.addEventListener('click', function() {
-            const quoteId = this.dataset.id;
-
-            if (typeof window.showConfirmationModal === 'function' && typeof window.showToast === 'function') {
-                window.showConfirmationModal(
-                    'Reject Quote',
-                    'Are you sure you want to reject this quote? This action cannot be undone.',
-                    async (confirmed) => {
-                        if (confirmed) {
-                            window.showToast('Rejecting quote...', 'info');
-                            const formData = new FormData();
-                            formData.append('action', 'reject_quote');
-                            formData.append('quote_id', quoteId);
-                            formData.append('csrf_token', csrfToken);
-
-                            try {
-                                const response = await fetch('/api/customer/quotes.php', {
-                                    method: 'POST',
-                                    body: formData
-                                });
-                                const result = await response.json();
-
-                                if (result.success) {
-                                    window.showToast(result.message, 'success');
                                     window.loadCustomerSection('quotes', { quote_id: quoteId });
-                                } else {
-                                    window.showToast(result.message, 'error');
                                 }
-                            } catch (error) {
-                                console.error('Reject quote API Error:', error);
-                                window.showToast('An error occurred. Please try again.', 'error');
+                            } else {
+                                window.showToast(result.message, 'error');
                             }
+                        } catch (error) {
+                            window.showToast('An unexpected error occurred.', 'error');
                         }
-                    },
-                    'Reject Quote',
-                    'bg-red-600'
-                );
-            } else {
-                console.error('showConfirmationModal or showToast not found.');
-                alert('Functionality not fully loaded. Please check console.');
-            }
+                    }
+                }, title, confirmColor);
+            });
         });
-    });
+    })();
 </script>

@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt_conv->close();
     }
 
-    $messages = [['role' => 'system', 'content' => "You are a helpful and friendly AI assistant for {$companyName}. Your goal is to gather all necessary information from a customer to create a service quote. Ask for customer type (Residential or Commercial) and rental duration. When you have ALL the required information (name, email, phone, location, service date, customer type, and all service-specific details), you MUST call the `submit_quote_request` tool."]];
+    $messages = [['role' => 'system', 'content' => "You are a helpful and friendly AI assistant for {$companyName}. Your goal is to gather all necessary information from a customer to create a service quote. Ask for customer type (Residential or Commercial) and rental duration. If the user requests multiple pieces of equipment, ensure you capture details for each one in an array. When you have ALL the required information, you MUST call the `submit_quote_request` tool."]];
     $stmt_fetch = $conn->prepare("SELECT role, content FROM chat_messages WHERE conversation_id = ? ORDER BY created_at ASC");
     $stmt_fetch->bind_param("i", $conversationId);
     $stmt_fetch->execute();
@@ -119,13 +119,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'live_load_needed' => ['type' => 'boolean'],
                         'driver_instructions' => ['type' => 'string'],
                         'equipment_details' => [
-                            'type' => 'object',
-                            'description' => 'Details for an equipment rental request.',
-                            'properties' => [
-                                'equipment_name' => ['type' => 'string', 'description' => 'The name and size of the equipment, e.g., "15-yard dumpster".'],
-                                'quantity' => ['type' => 'integer', 'description' => 'The number of units required.'],
-                                'duration_days' => ['type' => 'integer', 'description' => 'The total number of days for the rental period.'],
-                                'specific_needs' => ['type' => 'string', 'description' => 'Any other specific requirements or details from the customer.']
+                            'type' => 'array',
+                            'description' => 'A list of all equipment items for a rental request.',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'equipment_name' => ['type' => 'string', 'description' => 'The name and size of the equipment, e.g., "15-yard dumpster".'],
+                                    'quantity' => ['type' => 'integer', 'description' => 'The number of units required for this specific item.'],
+                                    'duration_days' => ['type' => 'integer', 'description' => 'The total number of days for the rental period.'],
+                                    'specific_needs' => ['type' => 'string', 'description' => 'Any other specific requirements or details for this item.']
+                                ],
+                                'required' => ['equipment_name', 'quantity']
                             ]
                         ],
                         'junk_details' => [
@@ -194,15 +198,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($arguments['service_type'] === 'equipment_rental' && !empty($arguments['equipment_details'])) {
                     $stmt_eq = $conn->prepare("INSERT INTO quote_equipment_details (quote_id, equipment_name, quantity, duration_days, specific_needs) VALUES (?, ?, ?, ?, ?)");
-                    $eq_details = $arguments['equipment_details'];
-                    // Use null coalescing operator to provide defaults
-                    $equipment_name = $eq_details['equipment_name'] ?? 'N/A';
-                    $quantity = $eq_details['quantity'] ?? 1;
-                    $duration_days = $eq_details['duration_days'] ?? null;
-                    $specific_needs = $eq_details['specific_needs'] ?? null;
-                    
-                    $stmt_eq->bind_param("isiss", $quoteId, $equipment_name, $quantity, $duration_days, $specific_needs);
-                    $stmt_eq->execute();
+                    foreach ($arguments['equipment_details'] as $item) {
+                        $equipment_name = $item['equipment_name'] ?? 'N/A';
+                        $quantity = $item['quantity'] ?? 1;
+                        $duration_days = $item['duration_days'] ?? null;
+                        $specific_needs = $item['specific_needs'] ?? null;
+                        
+                        $stmt_eq->bind_param("isiss", $quoteId, $equipment_name, $quantity, $duration_days, $specific_needs);
+                        $stmt_eq->execute();
+                    }
                     $stmt_eq->close();
                 }
 
