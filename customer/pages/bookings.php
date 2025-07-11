@@ -29,12 +29,18 @@ if ($requested_booking_id) {
             b.delivery_location, b.pickup_location, b.delivery_instructions, b.pickup_instructions,
             b.total_price AS initial_price,
             q.swap_charge, q.relocation_charge, q.daily_rate,
-            r.id as review_id
+            r.id as review_id,
+            ext.id AS extension_request_id, ext.status AS extension_request_status,
+            ext_inv.id AS extension_invoice_id
         FROM bookings b
         LEFT JOIN invoices i ON b.invoice_id = i.id
         LEFT JOIN quotes q ON i.quote_id = q.id
         LEFT JOIN reviews r ON b.id = r.booking_id AND r.user_id = b.user_id
+        LEFT JOIN booking_extension_requests ext ON b.id = ext.booking_id
+        LEFT JOIN invoices ext_inv ON ext.invoice_id = ext_inv.id AND ext_inv.status = 'pending'
         WHERE b.id = ? AND b.user_id = ?
+        ORDER BY ext.created_at DESC
+        LIMIT 1
     ");
     $stmt->bind_param("ii", $requested_booking_id, $user_id);
     $stmt->execute();
@@ -52,7 +58,7 @@ if ($requested_booking_id) {
                     $interval = $today->diff($endDate);
                     $booking_detail['remaining_days'] = $interval->days;
                 } else {
-                    $booking_detail['remaining_days'] = 0; // Or a negative number if you want to show it's overdue
+                    $booking_detail['remaining_days'] = 0;
                 }
             } catch (Exception $e) {
                 // Handle potential DateTime creation errors
@@ -94,12 +100,6 @@ if ($requested_booking_id) {
         }
         $charge_stmt->close();
 
-        // Fetch pending extension requests
-        $ext_stmt = $conn->prepare("SELECT id FROM booking_extension_requests WHERE booking_id = ? AND status = 'pending'");
-        $ext_stmt->bind_param("i", $booking_detail['id']);
-        $ext_stmt->execute();
-        $booking_detail['pending_extension'] = $ext_stmt->get_result()->num_rows > 0;
-        $ext_stmt->close();
     }
 } else {
     // --- Fetch Data for List View ---
@@ -242,10 +242,15 @@ function getTimelineIconClass($status) {
                                      data-charge="<?php echo htmlspecialchars($booking_detail['swap_charge'] ?? '0.00'); ?>">
                                  <i class="fas fa-exchange-alt mr-2"></i>Request Swap
                              </button>
-                             <?php if ($booking_detail['pending_extension']): ?>
+                             <?php if ($booking_detail['extension_request_status'] === 'pending'): ?>
                                 <div class="p-3 text-center bg-yellow-100 text-yellow-800 rounded-lg">
                                     <i class="fas fa-hourglass-half mr-2"></i>Your extension request is pending admin approval.
                                 </div>
+                             <?php elseif ($booking_detail['extension_request_status'] === 'approved' && !empty($booking_detail['extension_invoice_id'])): ?>
+                                <button class="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-md animate-pulse"
+                                        onclick="window.loadCustomerSection('invoices', { invoice_id: <?php echo $booking_detail['extension_invoice_id']; ?> });">
+                                    <i class="fas fa-file-invoice-dollar mr-2"></i>Pay for Extension
+                                </button>
                              <?php else: ?>
                                 <button class="w-full px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors duration-200 shadow-md request-extension-btn"
                                         data-booking-id="<?php echo $booking_detail['id']; ?>"
