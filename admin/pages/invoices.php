@@ -1,6 +1,7 @@
 <?php
 // admin/pages/invoices.php
 
+// Ensure session is started and user is logged in as admin
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
@@ -207,137 +208,181 @@ function getAdminInvoiceStatusBadge($status) {
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const listSection = document.getElementById('invoice-list-section');
-    const editSection = document.getElementById('invoice-edit-section');
+// Remove the DOMContentLoaded wrapper to ensure script runs immediately when loaded via AJAX.
 
-    function calculateTotals() {
-        let subtotal = 0;
-        document.querySelectorAll('#invoice-items-table tbody tr').forEach(row => {
-            const qty = parseFloat(row.querySelector('input[name="items[quantity][]"]').value) || 0;
-            const price = parseFloat(row.querySelector('input[name="items[unit_price][]"]').value) || 0;
-            const total = qty * price;
-            row.querySelector('input[name="items[total][]"]').value = total.toFixed(2);
-            subtotal += total;
-        });
+const listSection = document.getElementById('invoice-list-section');
+const editSection = document.getElementById('invoice-edit-section');
 
-        document.getElementById('subtotal').value = '$' + subtotal.toFixed(2);
+/**
+ * Calculates and updates the subtotal, discount, tax, and grand total fields
+ * in the invoice edit form.
+ */
+function calculateTotals() {
+    let subtotal = 0;
+    // Iterate over each row in the invoice items table to calculate line item totals and overall subtotal.
+    document.querySelectorAll('#invoice-items-table tbody tr').forEach(row => {
+        const qty = parseFloat(row.querySelector('input[name="items[quantity][]"]').value) || 0;
+        const price = parseFloat(row.querySelector('input[name="items[unit_price][]"]').value) || 0;
+        const total = qty * price;
+        // Update the total for the current line item.
+        row.querySelector('input[name="items[total][]"]').value = total.toFixed(2);
+        subtotal += total;
+    });
 
-        const discount = parseFloat(document.getElementById('discount').value) || 0;
-        const tax = parseFloat(document.getElementById('tax').value) || 0;
-        const grandTotal = (subtotal - discount) + tax;
-        document.getElementById('grand-total').value = '$' + grandTotal.toFixed(2);
+    // Update the displayed subtotal.
+    document.getElementById('subtotal').value = '$' + subtotal.toFixed(2);
+
+    // Get discount and tax values, defaulting to 0 if not a valid number.
+    const discount = parseFloat(document.getElementById('discount').value) || 0;
+    const tax = parseFloat(document.getElementById('tax').value) || 0;
+    
+    // Calculate the grand total.
+    const grandTotal = (subtotal - discount) + tax;
+    // Update the displayed grand total.
+    document.getElementById('grand-total').value = '$' + grandTotal.toFixed(2);
+}
+
+/**
+ * Toggles the visibility of the "Delete Selected" button based on
+ * whether any invoice checkboxes are checked.
+ */
+function toggleBulkDeleteButton() {
+    const anyChecked = document.querySelector('.invoice-checkbox:checked');
+    document.getElementById('bulk-delete-invoices-btn').classList.toggle('hidden', !anyChecked);
+}
+
+
+// --- Event Delegation for the entire page ---
+// Attaching a single click listener to the document body to handle events
+// from dynamically loaded content.
+document.body.addEventListener('click', function(event) {
+    // --- List View Actions ---
+    // Handle click on "Manage" button for an invoice.
+    if (event.target.classList.contains('manage-invoice-btn')) {
+        const invoiceId = event.target.dataset.id;
+        // Load the invoice edit section with the specific invoice ID.
+        window.loadAdminSection('invoices', { invoice_id: invoiceId });
     }
 
-    // --- Event Delegation for the entire page ---
-    document.body.addEventListener('click', function(event) {
-        // --- List View Actions ---
-        if (event.target.classList.contains('manage-invoice-btn')) {
-            const invoiceId = event.target.dataset.id;
-            window.loadAdminSection('invoices', { invoice_id: invoiceId });
-        }
+    // Handle click on "Select All" checkbox.
+    if (event.target.id === 'select-all-invoices') {
+        // Set all individual invoice checkboxes to the same state as the "Select All" checkbox.
+        document.querySelectorAll('.invoice-checkbox').forEach(cb => cb.checked = event.target.checked);
+        toggleBulkDeleteButton(); // Update bulk delete button visibility.
+    }
+    
+    // Handle click on individual invoice checkboxes.
+    if(event.target.classList.contains('invoice-checkbox')) {
+        toggleBulkDeleteButton(); // Update bulk delete button visibility.
+    }
 
-        if (event.target.id === 'select-all-invoices') {
-            document.querySelectorAll('.invoice-checkbox').forEach(cb => cb.checked = event.target.checked);
-            toggleBulkDeleteButton();
-        }
-        
-        if(event.target.classList.contains('invoice-checkbox')) {
-            toggleBulkDeleteButton();
-        }
-
-        if(event.target.id === 'bulk-delete-invoices-btn'){
-            const selectedIds = Array.from(document.querySelectorAll('.invoice-checkbox:checked')).map(cb => cb.value);
-            if(selectedIds.length > 0) {
-                 showConfirmationModal('Delete Selected Invoices', `Are you sure you want to delete ${selectedIds.length} invoice(s)?`, async (confirmed) => {
-                    if (confirmed) {
-                        const formData = new FormData();
-                        formData.append('action', 'delete_bulk');
-                        selectedIds.forEach(id => formData.append('invoice_ids[]', id));
-                        try {
-                            const response = await fetch('/api/admin/invoices.php', { method: 'POST', body: formData });
-                            const result = await response.json();
-                            if(result.success) {
-                                showToast(result.message, 'success');
-                                window.loadAdminSection('invoices');
-                            } else {
-                                showToast(result.message, 'error');
-                            }
-                        } catch(error) { showToast('An error occurred.', 'error'); }
+    // Handle click on "Delete Selected" button for bulk deletion.
+    if(event.target.id === 'bulk-delete-invoices-btn'){
+        // Get IDs of all checked invoices.
+        const selectedIds = Array.from(document.querySelectorAll('.invoice-checkbox:checked')).map(cb => cb.value);
+        if(selectedIds.length > 0) {
+            // Show a confirmation modal before proceeding with deletion.
+            showConfirmationModal('Delete Selected Invoices', `Are you sure you want to delete ${selectedIds.length} invoice(s)? This action cannot be undone.`, async (confirmed) => {
+                if (confirmed) {
+                    const formData = new FormData();
+                    formData.append('action', 'delete_bulk');
+                    // Append each selected ID to the FormData object.
+                    selectedIds.forEach(id => formData.append('invoice_ids[]', id));
+                    try {
+                        // Send the delete request to the API.
+                        const response = await fetch('/api/admin/invoices.php', { method: 'POST', body: formData });
+                        const result = await response.json();
+                        if(result.success) {
+                            showToast(result.message, 'success');
+                            window.loadAdminSection('invoices'); // Reload the invoices section to reflect changes.
+                        } else {
+                            showToast(result.message, 'error');
+                        }
+                    } catch(error) { 
+                        console.error('Bulk delete invoices API Error:', error);
+                        showToast('An error occurred during bulk deletion. Please try again.', 'error'); 
                     }
-                 }, 'Delete Selected', 'bg-red-600');
-            }
+                }
+            }, 'Delete Selected', 'bg-red-600');
         }
+    }
 
-        // --- Edit View Actions ---
-        if (event.target.id === 'add-item-btn') {
-            const tableBody = document.getElementById('invoice-items-table').querySelector('tbody');
-            const newRow = `
-                <tr>
-                    <td class="p-2"><input type="text" name="items[description][]" class="w-full p-2 border rounded" required></td>
-                    <td class="p-2"><input type="number" name="items[quantity][]" class="w-full p-2 border rounded" value="1" min="1" required></td>
-                    <td class="p-2"><input type="number" name="items[unit_price][]" class="w-full p-2 border rounded" value="0.00" step="0.01" min="0" required></td>
-                    <td class="p-2"><input type="text" name="items[total][]" class="w-full p-2 border rounded bg-gray-100" readonly></td>
-                    <td class="p-2 text-center"><button type="button" class="text-red-500 hover:text-red-700 remove-item-btn">&times;</button></td>
-                </tr>
-            `;
-            tableBody.insertAdjacentHTML('beforeend', newRow);
-        }
+    // --- Edit View Actions ---
+    // Handle click on "Add Line Item" button.
+    if (event.target.id === 'add-item-btn') {
+        const tableBody = document.getElementById('invoice-items-table').querySelector('tbody');
+        // HTML for a new invoice line item row.
+        const newRow = `
+            <tr>
+                <td class="p-2"><input type="text" name="items[description][]" class="w-full p-2 border rounded" required></td>
+                <td class="p-2"><input type="number" name="items[quantity][]" class="w-full p-2 border rounded" value="1" min="1" required></td>
+                <td class="p-2"><input type="number" name="items[unit_price][]" class="w-full p-2 border rounded" value="0.00" step="0.01" min="0" required></td>
+                <td class="p-2"><input type="text" name="items[total][]" class="w-full p-2 border rounded bg-gray-100" readonly></td>
+                <td class="p-2 text-center"><button type="button" class="text-red-500 hover:text-red-700 remove-item-btn">&times;</button></td>
+            </tr>
+        `;
+        tableBody.insertAdjacentHTML('beforeend', newRow); // Add new row to the table.
+        calculateTotals(); // Recalculate totals after adding a new row.
+    }
 
-        if (event.target.classList.contains('remove-item-btn')) {
-            event.target.closest('tr').remove();
+    // Handle click on "Remove Item" button for a line item.
+    if (event.target.classList.contains('remove-item-btn')) {
+        event.target.closest('tr').remove(); // Remove the entire row.
+        calculateTotals(); // Recalculate totals after removing a row.
+    }
+});
+
+// Recalculate totals on input change in edit view.
+// This listener is attached to the `editSection` which is part of the dynamically loaded content.
+if(editSection) { // Ensure editSection exists before attaching listeners
+    editSection.addEventListener('input', function(event){
+        // Check if the input change is relevant to total calculations.
+        if(event.target.matches('input[name^="items"], #discount, #tax')) {
             calculateTotals();
         }
     });
-
-    // Recalculate totals on input change in edit view
-    if(editSection && !editSection.classList.contains('hidden')){
-        editSection.addEventListener('input', function(event){
-            if(event.target.matches('input[name^="items"], #discount, #tax')) {
-                calculateTotals();
-            }
-        });
-        calculateTotals(); // Initial calculation
+    // Perform an initial calculation if the edit section is currently visible.
+    if(!editSection.classList.contains('hidden')) {
+        calculateTotals();
     }
-    
-    // Save Invoice Form Submission
-    const editInvoiceForm = document.getElementById('edit-invoice-form');
-    if(editInvoiceForm) {
-        editInvoiceForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const items = [];
-            document.querySelectorAll('#invoice-items-table tbody tr').forEach(row => {
-                items.push({
-                    description: row.querySelector('input[name="items[description][]"]').value,
-                    quantity: row.querySelector('input[name="items[quantity][]"]').value,
-                    unit_price: row.querySelector('input[name="items[unit_price][]"]').value,
-                });
+}
+
+// Save Invoice Form Submission.
+const editInvoiceForm = document.getElementById('edit-invoice-form');
+if(editInvoiceForm) {
+    editInvoiceForm.addEventListener('submit', async function(e) {
+        e.preventDefault(); // Prevent default form submission.
+        const items = [];
+        // Collect all line item data from the form.
+        document.querySelectorAll('#invoice-items-table tbody tr').forEach(row => {
+            items.push({
+                description: row.querySelector('input[name="items[description][]"]').value,
+                quantity: row.querySelector('input[name="items[quantity][]"]').value,
+                unit_price: row.querySelector('input[name="items[unit_price][]"]').value,
             });
-
-            const formData = new FormData();
-            formData.append('action', 'update_invoice');
-            formData.append('invoice_id', document.querySelector('input[name="invoice_id"]').value);
-            formData.append('items', JSON.stringify(items));
-            formData.append('discount', document.getElementById('discount').value);
-            formData.append('tax', document.getElementById('tax').value);
-
-             try {
-                const response = await fetch('/api/admin/invoices.php', { method: 'POST', body: formData });
-                const result = await response.json();
-                if(result.success) {
-                    showToast(result.message, 'success');
-                    window.loadAdminSection('invoices', {invoice_id: formData.get('invoice_id')});
-                } else {
-                    showToast(result.message, 'error');
-                }
-            } catch(error) { showToast('An error occurred.', 'error'); }
         });
-    }
 
-    function toggleBulkDeleteButton() {
-        const anyChecked = document.querySelector('.invoice-checkbox:checked');
-        document.getElementById('bulk-delete-invoices-btn').classList.toggle('hidden', !anyChecked);
-    }
+        const formData = new FormData();
+        formData.append('action', 'update_invoice');
+        formData.append('invoice_id', document.querySelector('input[name="invoice_id"]').value);
+        formData.append('items', JSON.stringify(items)); // Send items as a JSON string.
+        formData.append('discount', document.getElementById('discount').value);
+        formData.append('tax', document.getElementById('tax').value);
 
-});
-</script>
+        try {
+            // Send the update request to the API.
+            const response = await fetch('/api/admin/invoices.php', { method: 'POST', body: formData });
+            const result = await response.json();
+            if(result.success) {
+                showToast(result.message, 'success');
+                // Reload the invoice detail view to show updated data.
+                window.loadAdminSection('invoices', {invoice_id: formData.get('invoice_id')});
+            } else {
+                showToast(result.message, 'error');
+            }
+        } catch(error) { 
+            console.error('Update invoice API Error:', error);
+            showToast('An error occurred during invoice update. Please try again.', 'error'); 
+        }
+    });
+}
