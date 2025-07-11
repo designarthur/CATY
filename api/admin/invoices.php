@@ -47,6 +47,12 @@ try {
 }
 
 
+/**
+ * Handles updating the status of a single invoice.
+ *
+ * @param mysqli $conn The database connection object.
+ * @throws Exception If parameters are invalid, invoice not found, or database error occurs.
+ */
 function handleUpdateStatus($conn) {
     $invoice_id = filter_input(INPUT_POST, 'invoice_id', FILTER_VALIDATE_INT);
     $new_status = $_POST['status'] ?? '';
@@ -74,13 +80,17 @@ function handleUpdateStatus($conn) {
         throw new Exception('Invoice not found.');
     }
     if ($invoice_data['old_status'] === $new_status) {
-        throw new Exception('Invoice is already set to this status.');
+        echo json_encode(['success' => true, 'message' => 'Invoice status is already set. No update needed.']);
+        $conn->rollback();
+        return;
     }
 
     // 2. Update the invoice status
     $stmt_update = $conn->prepare("UPDATE invoices SET status = ? WHERE id = ?");
     $stmt_update->bind_param("si", $new_status, $invoice_id);
-    $stmt_update->execute();
+    if (!$stmt_update->execute()) {
+        throw new Exception("Database error on status update: " . $stmt_update->error);
+    }
     $stmt_update->close();
 
     // 3. Notify Customer
@@ -92,6 +102,12 @@ function handleUpdateStatus($conn) {
     echo json_encode(['success' => true, 'message' => "Invoice status updated to '{$new_status}' and customer notified."]);
 }
 
+/**
+ * Handles updating the details of an invoice, including its line items, discount, and tax.
+ *
+ * @param mysqli $conn The database connection object.
+ * @throws Exception If input is invalid or a database error occurs.
+ */
 function handleUpdateInvoice($conn) {
     $invoice_id = filter_input(INPUT_POST, 'invoice_id', FILTER_VALIDATE_INT);
     $items = json_decode($_POST['items'] ?? '[]', true);
@@ -139,7 +155,14 @@ function handleUpdateInvoice($conn) {
     echo json_encode(['success' => true, 'message' => 'Invoice updated successfully.']);
 }
 
-
+/**
+ * Handles bulk deletion of invoices.
+ * Before deleting invoices, it deletes any associated bookings
+ * to satisfy foreign key constraints.
+ *
+ * @param mysqli $conn The database connection object.
+ * @throws Exception If no invoice IDs are provided or a database error occurs.
+ */
 function handleDeleteBulk($conn) {
     $invoice_ids = $_POST['invoice_ids'] ?? [];
     if (empty($invoice_ids) || !is_array($invoice_ids)) {
@@ -152,23 +175,47 @@ function handleDeleteBulk($conn) {
         $placeholders = implode(',', array_fill(0, count($invoice_ids), '?'));
         $types = str_repeat('i', count($invoice_ids));
         
-        // Due to foreign key constraints, we might need to delete from child tables first if ON DELETE CASCADE is not set
-        // Assuming ON DELETE CASCADE is set for `invoice_items`.
+        // 1. Get booking IDs associated with these invoices
+        // We fetch the booking IDs to delete them explicitly, as invoice_id is NOT NULL
+        $stmt_fetch_bookings = $conn->prepare("SELECT id FROM bookings WHERE invoice_id IN ($placeholders)");
+        $stmt_fetch_bookings->bind_param($types, ...$invoice_ids);
+        $stmt_fetch_bookings->execute();
+        $result_bookings = $stmt_fetch_bookings->get_result();
+        $booking_ids_to_delete = [];
+        while($row = $result_bookings->fetch_assoc()) {
+            $booking_ids_to_delete[] = $row['id'];
+        }
+        $stmt_fetch_bookings->close();
+
+        // 2. If there are associated bookings, delete them
+        // This will also trigger ON DELETE CASCADE for booking_status_history and booking_charges
+        if (!empty($booking_ids_to_delete)) {
+            $booking_placeholders = implode(',', array_fill(0, count($booking_ids_to_delete), '?'));
+            $booking_types = str_repeat('i', count($booking_ids_to_delete));
+            
+            $stmt_delete_bookings = $conn->prepare("DELETE FROM bookings WHERE id IN ($booking_placeholders)");
+            $stmt_delete_bookings->bind_param($booking_types, ...$booking_ids_to_delete);
+            if (!$stmt_delete_bookings->execute()) {
+                throw new Exception("Failed to delete associated bookings.");
+            }
+            $stmt_delete_bookings->close();
+        }
+
+        // 3. Delete the invoices
+        // Note: invoice_items will be automatically deleted due to ON DELETE CASCADE constraint.
+        $stmt_delete_invoices = $conn->prepare("DELETE FROM invoices WHERE id IN ($placeholders)");
+        $stmt_delete_invoices->bind_param($types, ...$invoice_ids);
         
-        $stmt = $conn->prepare("DELETE FROM invoices WHERE id IN ($placeholders)");
-        $stmt->bind_param($types, ...$invoice_ids);
-        
-        if ($stmt->execute()) {
+        if ($stmt_delete_invoices->execute()) {
             $conn->commit();
-            echo json_encode(['success' => true, 'message' => 'Selected invoices have been deleted.']);
+            echo json_encode(['success' => true, 'message' => 'Selected invoices and their associated bookings have been deleted.']);
         } else {
             throw new Exception("Failed to delete invoices.");
         }
-        $stmt->close();
+        $stmt_delete_invoices->close();
     } catch (Exception $e) {
         $conn->rollback();
         throw $e; // Re-throw the exception
     }
 }
-
 ?>
