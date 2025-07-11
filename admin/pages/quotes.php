@@ -50,7 +50,7 @@ if ($requested_quote_id) {
             $stmt_junk = $conn->prepare("SELECT junk_items_json, recommended_dumpster_size, additional_comment, media_urls_json FROM junk_removal_details WHERE quote_id = ?");
             $stmt_junk->bind_param("i", $requested_quote_id);
             $stmt_junk->execute();
-            $junk_result = $stmt_junk->get_result()->fetch_assoc();
+            $junk_result = $junk_result->get_result()->fetch_assoc();
             if($junk_result) {
                 $quote_detail_view_data['junk_details'] = $junk_result;
                 $quote_detail_view_data['junk_details']['junk_items_json'] = json_decode($junk_result['junk_items_json'] ?? '[]', true);
@@ -194,6 +194,10 @@ function getAdminStatusBadgeClass($status) {
                             <div class="mb-4">
                                 <label for="quote-price" class="block text-sm font-medium text-gray-700">Main Quoted Price ($)</label>
                                 <input type="number" id="quote-price" name="quoted_price" step="0.01" min="0" class="mt-1 p-2 border border-gray-300 rounded-md w-full" required>
+                            </div>
+                            <div class="mb-4">
+                                <label for="daily-rate" class="block text-sm font-medium text-gray-700">Daily Rate (for extensions)</label>
+                                <input type="number" id="daily-rate" name="daily_rate" step="0.01" min="0" placeholder="e.g., 25.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
                             </div>
                             <div class="grid grid-cols-2 gap-4 mb-4">
                                 <div>

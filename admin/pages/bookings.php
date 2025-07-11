@@ -20,6 +20,9 @@ $vendors = [];
 $filter_status = $_GET['status'] ?? 'all';
 $requested_booking_id = filter_input(INPUT_GET, 'booking_id', FILTER_VALIDATE_INT);
 
+// Set a default timezone to ensure consistent date calculations
+date_default_timezone_set('UTC');
+
 // Fetch all vendors for the "Assign Vendor" dropdown
 $stmt_vendors = $conn->prepare("SELECT id, name FROM vendors WHERE is_active = TRUE ORDER BY name ASC");
 $stmt_vendors->execute();
@@ -39,13 +42,15 @@ if ($requested_booking_id) {
             b.equipment_details, b.junk_details, b.vendor_id,
             u.id as user_id, u.first_name, u.last_name, u.email, u.phone_number, u.address, u.city, u.state, u.zip_code,
             inv.invoice_number, inv.amount AS invoice_amount, inv.status AS invoice_status,
-            q.id AS quote_id,
-            v.name AS vendor_name, v.email AS vendor_email, v.phone_number AS vendor_phone
+            q.id AS quote_id, q.daily_rate,
+            v.name AS vendor_name, v.email AS vendor_email, v.phone_number AS vendor_phone,
+            ext.id AS extension_request_id, ext.requested_days AS extension_requested_days, ext.status AS extension_status
         FROM bookings b
         JOIN users u ON b.user_id = u.id
         LEFT JOIN invoices inv ON b.invoice_id = inv.id
         LEFT JOIN quotes q ON inv.quote_id = q.id
         LEFT JOIN vendors v ON b.vendor_id = v.id
+        LEFT JOIN booking_extension_requests ext ON b.id = ext.booking_id AND ext.status = 'pending'
         WHERE b.id = ?
     ");
     $stmt_detail->bind_param("i", $requested_booking_id);
@@ -56,12 +61,19 @@ if ($requested_booking_id) {
         $booking_detail_view_data['equipment_details'] = json_decode($booking_detail_view_data['equipment_details'] ?? '[]', true);
         $booking_detail_view_data['junk_details'] = json_decode($booking_detail_view_data['junk_details'] ?? '{}', true);
 
-        if ($booking_detail_view_data && in_array($booking_detail_view_data['status'], ['delivered', 'in_use', 'awaiting_pickup'])) {
-            $endDate = new DateTime($booking_detail_view_data['end_date']);
-            $today = new DateTime();
-            $interval = $today->diff($endDate);
-            $remaining_days = (int)$interval->format('%r%a');
-            $booking_detail_view_data['remaining_days'] = $remaining_days;
+        if ($booking_detail_view_data && in_array($booking_detail_view_data['status'], ['delivered', 'in_use', 'awaiting_pickup']) && !empty($booking_detail_view_data['end_date'])) {
+             try {
+                $endDate = new DateTime($booking_detail_view_data['end_date']);
+                $today = new DateTime('today');
+                if ($endDate >= $today) {
+                    $interval = $today->diff($endDate);
+                    $booking_detail_view_data['remaining_days'] = $interval->days;
+                } else {
+                    $booking_detail_view_data['remaining_days'] = 0;
+                }
+            } catch (Exception $e) {
+                $booking_detail_view_data['remaining_days'] = 'N/A';
+            }
         }
     }
     $stmt_detail->close();
@@ -70,7 +82,8 @@ if ($requested_booking_id) {
     $query = "
         SELECT
             b.id, b.booking_number, b.service_type, b.status, b.start_date,
-            u.first_name, u.last_name, v.name AS vendor_name
+            u.first_name, u.last_name, v.name AS vendor_name,
+            (SELECT COUNT(*) FROM booking_extension_requests ext WHERE ext.booking_id = b.id AND ext.status = 'pending') AS pending_extensions
         FROM bookings b
         JOIN users u ON b.user_id = u.id
         LEFT JOIN vendors v ON b.vendor_id = v.id
@@ -83,7 +96,7 @@ if ($requested_booking_id) {
         $params[] = $filter_status;
         $types .= "s";
     }
-    $query .= " ORDER BY b.created_at DESC";
+    $query .= " ORDER BY pending_extensions DESC, b.created_at DESC";
 
     $stmt_list = $conn->prepare($query);
     if (!empty($params)) {
@@ -150,8 +163,13 @@ function getAdminStatusBadgeClass($status) {
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     <?php foreach ($bookings as $booking): ?>
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#BK-<?php echo htmlspecialchars($booking['booking_number']); ?></td>
+                        <tr class="<?php echo $booking['pending_extensions'] > 0 ? 'bg-yellow-50' : '' ?>">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                #BK-<?php echo htmlspecialchars($booking['booking_number']); ?>
+                                <?php if ($booking['pending_extensions'] > 0): ?>
+                                    <span class="ml-2 text-yellow-600" title="Pending Extension Request"><i class="fas fa-hourglass-half"></i></span>
+                                <?php endif; ?>
+                            </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars($booking['first_name'] . ' ' . $booking['last_name']); ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $booking['service_type']))); ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars($booking['vendor_name'] ?? 'N/A'); ?></td>
@@ -200,7 +218,7 @@ function getAdminStatusBadgeClass($status) {
         </div>
 
         <h3 class="text-xl font-semibold text-gray-700 mb-4">Admin Actions</h3>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
                 <label for="booking-status-select" class="block text-sm font-medium text-gray-700 mb-2">Update Status</label>
                 <select id="booking-status-select" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
@@ -235,6 +253,20 @@ function getAdminStatusBadgeClass($status) {
                     <i class="fas fa-plus-circle mr-2"></i>Add Charge
                  </button>
             </div>
+            <div>
+                 <label class="block text-sm font-medium text-gray-700 mb-2">Rental Extension</label>
+                 <?php if($booking_detail_view_data['extension_request_id']): ?>
+                    <button class="mt-1 w-full px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors duration-200 animate-pulse" id="approve-extension-btn" 
+                        data-id="<?php echo htmlspecialchars($booking_detail_view_data['id']); ?>"
+                        data-request-id="<?php echo htmlspecialchars($booking_detail_view_data['extension_request_id']); ?>"
+                        data-requested-days="<?php echo htmlspecialchars($booking_detail_view_data['extension_requested_days']); ?>"
+                        data-daily-rate="<?php echo htmlspecialchars($booking_detail_view_data['daily_rate'] ?? '0.00'); ?>">
+                        <i class="fas fa-calendar-plus mr-2"></i>Approve Extension Request
+                    </button>
+                 <?php else: ?>
+                    <p class="text-sm text-gray-500 mt-2">No pending extension request from the customer.</p>
+                 <?php endif; ?>
+            </div>
         </div>
     <?php else: ?>
         <p class="text-center text-gray-600">Booking details not found or invalid ID.</p>
@@ -267,6 +299,44 @@ function getAdminStatusBadgeClass($status) {
             <div class="flex justify-end space-x-4">
                 <button type="button" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('add-charge-modal')">Cancel</button>
                 <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">Generate Invoice</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="approve-extension-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-lg text-gray-800">
+        <h3 class="text-xl font-bold mb-4">Approve Rental Extension</h3>
+        <form id="approve-extension-form">
+            <input type="hidden" name="booking_id" id="approve-extension-booking-id">
+            <input type="hidden" name="extension_request_id" id="approve-extension-request-id">
+            <div class="mb-4">
+                <label for="extension-days" class="block text-sm font-medium text-gray-700">Extension Days (Requested)</label>
+                <input type="number" id="extension-days" name="extension_days" min="1" class="mt-1 p-2 border border-gray-300 rounded-md w-full bg-gray-100" readonly>
+            </div>
+            <div class="mb-4">
+                 <label for="extension-price-option" class="block text-sm font-medium text-gray-700">Pricing Method</label>
+                 <select id="extension-price-option" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
+                     <option value="daily_rate">Use Daily Rate</option>
+                     <option value="custom_total">Set Custom Total Price</option>
+                 </select>
+            </div>
+            <div class="mb-4" id="daily-rate-section">
+                <label for="daily-rate" class="block text-sm font-medium text-gray-700">Daily Rate ($)</label>
+                <input type="number" id="daily-rate" name="daily_rate" step="0.01" min="0.01" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
+            </div>
+            <div class="mb-4 hidden" id="custom-total-section">
+                 <label for="custom-total-price" class="block text-sm font-medium text-gray-700">Custom Total Price ($)</label>
+                 <input type="number" id="custom-total-price" name="custom_total_price" step="0.01" min="0.01" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
+            </div>
+
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-5 text-center">
+                <p class="text-sm text-yellow-700">Total Extension Cost:</p>
+                <p id="extension-total-cost" class="text-2xl font-bold text-yellow-800">$0.00</p>
+            </div>
+            <div class="flex justify-end space-x-4">
+                <button type="button" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('approve-extension-modal')">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 font-semibold">Approve & Generate Invoice</button>
             </div>
         </form>
     </div>
@@ -382,6 +452,25 @@ function getAdminStatusBadgeClass($status) {
             document.getElementById('add-charge-form').reset();
             showModal('add-charge-modal');
         }
+
+        if (target.id === 'approve-extension-btn') {
+            const bookingId = target.dataset.id;
+            const dailyRate = target.dataset.dailyRate;
+            const requestedDays = target.dataset.requestedDays;
+            const requestId = target.dataset.requestId;
+
+            document.getElementById('approve-extension-booking-id').value = bookingId;
+            document.getElementById('approve-extension-request-id').value = requestId;
+            document.getElementById('extension-days').value = requestedDays;
+            document.getElementById('daily-rate').value = dailyRate;
+            
+            // Trigger calculation
+            const dailyRateInput = document.getElementById('daily-rate');
+            const event = new Event('input', { bubbles: true, cancelable: true });
+            dailyRateInput.dispatchEvent(event);
+
+            showModal('approve-extension-modal');
+        }
     });
 
     const addChargeForm = document.getElementById('add-charge-form');
@@ -407,7 +496,73 @@ function getAdminStatusBadgeClass($status) {
                 if (result.success) {
                     showToast(result.message, 'success');
                     hideModal('add-charge-modal');
-                    // Optionally, you could redirect to the new invoice or just reload the booking
+                    showBookingDetails(formData.get('booking_id'));
+                } else {
+                    showToast('Error: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showToast('An unexpected error occurred.', 'error');
+            }
+        });
+    }
+
+    const approveExtensionForm = document.getElementById('approve-extension-form');
+    if (approveExtensionForm) {
+        const daysInput = document.getElementById('extension-days');
+        const rateInput = document.getElementById('daily-rate');
+        const customPriceInput = document.getElementById('custom-total-price');
+        const costDisplay = document.getElementById('extension-total-cost');
+        const pricingOption = document.getElementById('extension-price-option');
+        const dailyRateSection = document.getElementById('daily-rate-section');
+        const customTotalSection = document.getElementById('custom-total-section');
+
+        function calculateExtensionCost() {
+            if (pricingOption.value === 'daily_rate') {
+                const days = parseInt(daysInput.value) || 0;
+                const rate = parseFloat(rateInput.value) || 0;
+                costDisplay.textContent = `$${(days * rate).toFixed(2)}`;
+            } else {
+                 const customPrice = parseFloat(customPriceInput.value) || 0;
+                 costDisplay.textContent = `$${customPrice.toFixed(2)}`;
+            }
+        }
+        
+        pricingOption.addEventListener('change', function() {
+            if(this.value === 'daily_rate'){
+                dailyRateSection.classList.remove('hidden');
+                customTotalSection.classList.add('hidden');
+            } else {
+                dailyRateSection.classList.add('hidden');
+                customTotalSection.classList.remove('hidden');
+            }
+            calculateExtensionCost();
+        });
+
+        daysInput.addEventListener('input', calculateExtensionCost);
+        rateInput.addEventListener('input', calculateExtensionCost);
+        customPriceInput.addEventListener('input', calculateExtensionCost);
+
+        approveExtensionForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            formData.append('action', 'approve_extension');
+            formData.append('pricing_option', pricingOption.value);
+
+            if (!formData.get('extension_days')) {
+                showToast('Extension days are required.', 'error');
+                return;
+            }
+
+            showToast('Approving extension and generating invoice...', 'info');
+            try {
+                const response = await fetch('/api/admin/bookings.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    hideModal('approve-extension-modal');
                     showBookingDetails(formData.get('booking_id'));
                 } else {
                     showToast('Error: ' + result.message, 'error');

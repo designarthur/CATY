@@ -17,6 +17,10 @@ $bookings_list = [];
 
 $requested_booking_id = filter_input(INPUT_GET, 'booking_id', FILTER_VALIDATE_INT);
 
+// Set a default timezone to ensure consistent date calculations
+date_default_timezone_set('UTC');
+
+
 if ($requested_booking_id) {
     // --- ENHANCED DATA FETCHING FOR DETAIL VIEW ---
     $stmt = $conn->prepare("
@@ -24,7 +28,7 @@ if ($requested_booking_id) {
             b.id, b.booking_number, b.service_type, b.start_date, b.end_date, b.status,
             b.delivery_location, b.pickup_location, b.delivery_instructions, b.pickup_instructions,
             b.total_price AS initial_price,
-            q.swap_charge, q.relocation_charge,
+            q.swap_charge, q.relocation_charge, q.daily_rate,
             r.id as review_id
         FROM bookings b
         LEFT JOIN invoices i ON b.invoice_id = i.id
@@ -38,6 +42,25 @@ if ($requested_booking_id) {
     $stmt->close();
 
     if ($booking_detail) {
+        // Calculate remaining days
+        if (in_array($booking_detail['status'], ['delivered', 'in_use', 'awaiting_pickup']) && !empty($booking_detail['end_date'])) {
+            try {
+                $endDate = new DateTime($booking_detail['end_date']);
+                $today = new DateTime('today'); // Use 'today' to ignore the time part
+                
+                if ($endDate >= $today) {
+                    $interval = $today->diff($endDate);
+                    $booking_detail['remaining_days'] = $interval->days;
+                } else {
+                    $booking_detail['remaining_days'] = 0; // Or a negative number if you want to show it's overdue
+                }
+            } catch (Exception $e) {
+                // Handle potential DateTime creation errors
+                $booking_detail['remaining_days'] = 'N/A';
+            }
+        }
+
+
         // Fetch status history for the timeline
         $history_stmt = $conn->prepare("SELECT status, status_time, notes FROM booking_status_history WHERE booking_id = ? ORDER BY status_time ASC, id ASC");
         $history_stmt->bind_param("i", $booking_detail['id']);
@@ -70,6 +93,13 @@ if ($requested_booking_id) {
             $booking_detail['additional_charges'][] = $charge_row;
         }
         $charge_stmt->close();
+
+        // Fetch pending extension requests
+        $ext_stmt = $conn->prepare("SELECT id FROM booking_extension_requests WHERE booking_id = ? AND status = 'pending'");
+        $ext_stmt->bind_param("i", $booking_detail['id']);
+        $ext_stmt->execute();
+        $booking_detail['pending_extension'] = $ext_stmt->get_result()->num_rows > 0;
+        $ext_stmt->close();
     }
 } else {
     // --- Fetch Data for List View ---
@@ -163,6 +193,20 @@ function getTimelineIconClass($status) {
                     <span class="text-lg font-bold px-3 py-1 rounded-full <?php echo getStatusBadgeClass($booking_detail['status']); ?>">
                         <?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $booking_detail['status']))); ?>
                     </span>
+                    
+                    <?php if (isset($booking_detail['remaining_days'])): ?>
+                        <div class="mt-4 pt-4 border-t border-gray-200">
+                            <p class="text-gray-500 mb-2">Time Remaining:</p>
+                            <div class="text-center p-4 rounded-lg <?php echo $booking_detail['remaining_days'] < 3 ? 'bg-red-100' : 'bg-green-100'; ?>">
+                                <div class="text-4xl font-bold <?php echo $booking_detail['remaining_days'] < 3 ? 'text-red-600' : 'text-green-600'; ?>">
+                                    <?php echo $booking_detail['remaining_days']; ?>
+                                </div>
+                                <div class="text-sm font-medium <?php echo $booking_detail['remaining_days'] < 3 ? 'text-red-700' : 'text-green-700'; ?>">
+                                    Days Remaining
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
                     <h3 class="text-xl font-semibold text-gray-700 mb-4">Status Timeline</h3>
@@ -198,6 +242,17 @@ function getTimelineIconClass($status) {
                                      data-charge="<?php echo htmlspecialchars($booking_detail['swap_charge'] ?? '0.00'); ?>">
                                  <i class="fas fa-exchange-alt mr-2"></i>Request Swap
                              </button>
+                             <?php if ($booking_detail['pending_extension']): ?>
+                                <div class="p-3 text-center bg-yellow-100 text-yellow-800 rounded-lg">
+                                    <i class="fas fa-hourglass-half mr-2"></i>Your extension request is pending admin approval.
+                                </div>
+                             <?php else: ?>
+                                <button class="w-full px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors duration-200 shadow-md request-extension-btn"
+                                        data-booking-id="<?php echo $booking_detail['id']; ?>"
+                                        data-daily-rate="<?php echo htmlspecialchars($booking_detail['daily_rate'] ?? '0.00'); ?>">
+                                    <i class="fas fa-calendar-plus mr-2"></i>Request Extension
+                                </button>
+                             <?php endif; ?>
                              <button class="w-full px-4 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors duration-200 shadow-md schedule-pickup-btn"
                                      data-booking-id="<?php echo $booking_detail['id']; ?>">
                                  <i class="fas fa-calendar-check mr-2"></i>Schedule Pickup
@@ -280,6 +335,30 @@ function getTimelineIconClass($status) {
     <?php endif; ?>
 </div>
 
+<div id="extension-request-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md text-gray-800">
+        <h3 class="text-xl font-bold mb-4">Request Rental Extension</h3>
+        <form id="extension-form">
+            <input type="hidden" name="action" value="request_extension">
+            <input type="hidden" name="booking_id" id="extension-booking-id">
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+            <div class="mb-5">
+                <label for="extension-days" class="block text-sm font-medium text-gray-700 mb-2">Number of Additional Days</label>
+                <input type="number" id="extension-days" name="extension_days" class="w-full p-3 border border-gray-300 rounded-lg" min="1" required>
+            </div>
+            <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg mb-5 text-center">
+                <p class="text-sm text-blue-700">Estimated Cost:</p>
+                <p id="extension-cost-display" class="text-2xl font-bold text-blue-800">$0.00</p>
+                <p class="text-xs text-blue-600">Based on a daily rate of <span id="extension-daily-rate-display">$0.00</span></p>
+            </div>
+            <div class="flex justify-end space-x-4">
+                <button type="button" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400" onclick="hideModal('extension-request-modal')">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600">Submit Extension Request</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div id="relocation-request-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
     <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md text-gray-800">
         <h3 class="text-xl font-bold mb-4">Request Relocation</h3>
@@ -360,11 +439,8 @@ function getTimelineIconClass($status) {
             
             if (result.success) {
                 showToast(result.message, 'success');
-                if (result.invoice_id) {
-                    window.loadCustomerSection('invoices', { invoice_id: result.invoice_id });
-                } else {
-                    handleNavigation(formData.get('booking_id'));
-                }
+                // For extension requests, we now wait for admin approval, so we just reload the booking detail view.
+                handleNavigation(formData.get('booking_id'));
             } else {
                 showToast(result.message || `Failed to submit ${actionText}.`, 'error');
             }
@@ -372,7 +448,7 @@ function getTimelineIconClass($status) {
             console.error('API Error:', error);
             showToast('An unexpected error occurred.', 'error');
         } finally {
-            ['relocation-request-modal', 'swap-request-modal', 'pickup-request-modal'].forEach(id => hideModal(id));
+            ['relocation-request-modal', 'swap-request-modal', 'pickup-request-modal', 'extension-request-modal'].forEach(id => hideModal(id));
         }
     };
 
@@ -445,24 +521,49 @@ function getTimelineIconClass($status) {
         }
         
         const bookingId = target.dataset.bookingId;
-        const charge = parseFloat(target.dataset.charge || '0').toFixed(2);
 
         if (target.classList.contains('request-relocation-btn')) {
             document.getElementById('relocation-booking-id').value = bookingId;
-            document.getElementById('relocation-charge-display').textContent = `$${charge}`;
+            document.getElementById('relocation-charge-display').textContent = `$`+parseFloat(target.dataset.charge || '0').toFixed(2);
             showModal('relocation-request-modal');
         }
         if (target.classList.contains('request-swap-btn')) {
             document.getElementById('swap-booking-id').value = bookingId;
-            document.getElementById('swap-charge-display').textContent = `$${charge}`;
+            document.getElementById('swap-charge-display').textContent = `$`+parseFloat(target.dataset.charge || '0').toFixed(2);
             showModal('swap-request-modal');
         }
         if (target.classList.contains('schedule-pickup-btn')) {
             document.getElementById('pickup-booking-id').value = bookingId;
             showModal('pickup-request-modal');
         }
+        if (target.classList.contains('request-extension-btn')) {
+            const dailyRate = parseFloat(target.dataset.dailyRate || '0');
+            if(dailyRate <= 0){
+                showToast('Extension is not available for this item as a daily rate is not set. Please contact support.', 'error');
+                return;
+            }
+            document.getElementById('extension-booking-id').value = bookingId;
+            document.getElementById('extension-daily-rate-display').textContent = `$${dailyRate.toFixed(2)}`;
+            const extensionDaysInput = document.getElementById('extension-days');
+            extensionDaysInput.value = 1; // Default to 1 day
+            document.getElementById('extension-cost-display').textContent = `$${dailyRate.toFixed(2)}`;
+            showModal('extension-request-modal');
+        }
     });
 
+    // Cost calculation for extension modal
+    const extensionDaysInput = document.getElementById('extension-days');
+    if(extensionDaysInput){
+        extensionDaysInput.addEventListener('input', function() {
+            const days = parseInt(this.value) || 0;
+            const dailyRateString = document.getElementById('extension-daily-rate-display').textContent.replace('$', '');
+            const dailyRate = parseFloat(dailyRateString || '0');
+            const totalCost = days * dailyRate;
+            document.getElementById('extension-cost-display').textContent = `$${totalCost.toFixed(2)}`;
+        });
+    }
+
+    document.getElementById('extension-form')?.addEventListener('submit', function(e) { e.preventDefault(); callBookingApi(this); });
     document.getElementById('relocation-form')?.addEventListener('submit', function(e) { e.preventDefault(); callBookingApi(this); });
     document.getElementById('swap-form')?.addEventListener('submit', function(e) { e.preventDefault(); callBookingApi(this); });
     document.getElementById('pickup-form')?.addEventListener('submit', function(e) { e.preventDefault(); callBookingApi(this); });

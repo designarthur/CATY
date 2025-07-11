@@ -74,6 +74,7 @@ try {
 function handleSubmitQuote($conn, $quoteId) {
     // --- Input Validation ---
     $quotedPrice = filter_input(INPUT_POST, 'quoted_price', FILTER_VALIDATE_FLOAT);
+    $dailyRate = filter_input(INPUT_POST, 'daily_rate', FILTER_VALIDATE_FLOAT);
     $swapCharge = filter_input(INPUT_POST, 'swap_charge', FILTER_VALIDATE_FLOAT);
     $relocationCharge = filter_input(INPUT_POST, 'relocation_charge', FILTER_VALIDATE_FLOAT);
     $adminNotes = trim($_POST['admin_notes'] ?? '');
@@ -82,6 +83,7 @@ function handleSubmitQuote($conn, $quoteId) {
 
 
     // Set to 0.00 if null or empty after filtering
+    $dailyRate = $dailyRate ?? 0.00;
     $swapCharge = $swapCharge ?? 0.00;
     $relocationCharge = $relocationCharge ?? 0.00;
 
@@ -100,8 +102,8 @@ function handleSubmitQuote($conn, $quoteId) {
     if (!$quote_user_data) throw new Exception('User for the quote not found.');
 
     // 1. Update the quote in the database, now including the new charge and inclusion fields.
-    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, swap_charge = ?, relocation_charge = ?, admin_notes = ?, is_swap_included = ?, is_relocation_included = ? WHERE id = ?");
-    $stmt_update->bind_param("dddsiii", $quotedPrice, $swapCharge, $relocationCharge, $adminNotes, $isSwapIncluded, $isRelocationIncluded, $quoteId);
+    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, daily_rate = ?, swap_charge = ?, relocation_charge = ?, admin_notes = ?, is_swap_included = ?, is_relocation_included = ? WHERE id = ?");
+    $stmt_update->bind_param("ddddsiis", $quotedPrice, $dailyRate, $swapCharge, $relocationCharge, $adminNotes, $isSwapIncluded, $isRelocationIncluded, $quoteId);
     $stmt_update->execute();
     $stmt_update->close();
 

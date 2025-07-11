@@ -36,6 +36,9 @@ try {
         case 'schedule_pickup':
             handleSchedulePickup($conn);
             break;
+        case 'request_extension':
+            handleRequestExtension($conn);
+            break;
         default:
             throw new Exception('Invalid action specified.');
     }
@@ -190,5 +193,56 @@ function handleSchedulePickup($conn) {
     $conn->commit();
 
     echo json_encode(['success' => true, 'message' => 'Pickup scheduled successfully!']);
+}
+
+function handleRequestExtension($conn) {
+    $booking_id = filter_input(INPUT_POST, 'booking_id', FILTER_VALIDATE_INT);
+    $extension_days = filter_input(INPUT_POST, 'extension_days', FILTER_VALIDATE_INT);
+    $user_id = $_SESSION['user_id'];
+
+    if (!$booking_id || !$extension_days || $extension_days <= 0) {
+        throw new Exception('Booking ID and a valid number of extension days are required.');
+    }
+
+    $conn->begin_transaction();
+    
+    // Check if there's already a pending request
+    $stmt_check = $conn->prepare("SELECT id FROM booking_extension_requests WHERE booking_id = ? AND status = 'pending'");
+    $stmt_check->bind_param("i", $booking_id);
+    $stmt_check->execute();
+    if ($stmt_check->get_result()->num_rows > 0) {
+        throw new Exception('You already have a pending extension request for this booking.');
+    }
+    $stmt_check->close();
+
+    // 1. Log the extension request
+    $stmt_request = $conn->prepare("INSERT INTO booking_extension_requests (booking_id, user_id, requested_days) VALUES (?, ?, ?)");
+    $stmt_request->bind_param("iii", $booking_id, $user_id, $extension_days);
+    $stmt_request->execute();
+    $stmt_request->close();
+
+    // 2. Notify admin about the new request
+    $admin_notification_message = "Customer has requested a {$extension_days}-day extension for Booking ID #{$booking_id}. Please review and approve.";
+    $admin_notification_link = "bookings?booking_id={$booking_id}";
+    // Assuming admin user_id is 1 for system-wide notifications
+    $stmt_admin_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (1, 'system_message', ?, ?)");
+    $stmt_admin_notify->bind_param("ss", $admin_notification_message, $admin_notification_link);
+    $stmt_admin_notify->execute();
+    $stmt_admin_notify->close();
+
+    // 3. Notify customer that the request has been submitted
+    $notification_message = "Your request to extend Booking #{$booking_id} by {$extension_days} days has been submitted for approval.";
+    $notification_link = "bookings?booking_id={$booking_id}";
+    $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'booking_status_update', ?, ?)");
+    $stmt_notify->bind_param("iss", $user_id, $notification_message, $notification_link);
+    $stmt_notify->execute();
+    $stmt_notify->close();
+    
+    $conn->commit();
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Your extension request has been submitted and is awaiting admin approval.'
+    ]);
 }
 ?>
