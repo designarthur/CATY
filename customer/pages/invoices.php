@@ -18,7 +18,7 @@ $invoices = [];
 $invoice_detail = null; // To hold data for a single invoice detail view if requested
 
 // Check if a specific invoice ID is requested for detail view
-$requested_invoice_number = $_GET['invoice_id'] ?? null;
+$requested_invoice_id = $_GET['invoice_id'] ?? null;
 $requested_quote_id = $_GET['quote_id'] ?? null; // For direct link from pending quotes
 
 // Fetch all invoices for the list
@@ -32,39 +32,40 @@ while ($row = $result_all_invoices->fetch_assoc()) {
 $stmt_all_invoices->close();
 
 // If a specific invoice number is requested, fetch its details
-if ($requested_invoice_number || $requested_quote_id) { // Combined condition
-    $stmt_detail = $conn->prepare("SELECT
-                                    i.id, i.invoice_number, i.amount, i.status, i.created_at, i.due_date, i.transaction_id, i.payment_method,
-                                    u.first_name, u.last_name, u.email, u.address, u.city, u.state, u.zip_code,
-                                    q.service_type, q.quote_details, q.quoted_price,
-                                    qed.equipment_name, qed.quantity, qed.specific_needs, qed.duration_days,
-                                    jrd.junk_items_json, jrd.recommended_dumpster_size, jrd.additional_comment, jrd.media_urls_json,
-                                    b.equipment_details AS booking_equipment_details, b.junk_details AS booking_junk_details, b.total_price AS booking_total_price
-                                FROM
-                                    invoices i
-                                JOIN
-                                    users u ON i.user_id = u.id
-                                LEFT JOIN
-                                    quotes q ON i.quote_id = q.id
-                                LEFT JOIN
-                                    quote_equipment_details qed ON q.id = qed.quote_id
-                                LEFT JOIN
-                                    junk_removal_details jrd ON q.id = jrd.quote_id
-                                LEFT JOIN
-                                    bookings b ON i.id = b.invoice_id
-                                WHERE
-                                    i.user_id = ? AND (i.invoice_number = ? OR q.id = ?)"); // Added OR q.id = ? for consistent fetching
-    $stmt_detail->bind_param("isi", $user_id, $requested_invoice_number, $requested_quote_id); // Changed bind_param to include new parameter
+if ($requested_invoice_id || $requested_quote_id) { 
+    $sql = "SELECT
+                i.id, i.invoice_number, i.amount, i.status, i.created_at, i.due_date, i.transaction_id, i.payment_method, i.discount, i.tax,
+                u.first_name, u.last_name, u.email, u.address, u.city, u.state, u.zip_code
+            FROM invoices i
+            JOIN users u ON i.user_id = u.id
+            WHERE i.user_id = ?";
+
+    if ($requested_invoice_id) {
+        $sql .= " AND i.id = ?";
+        $stmt_detail = $conn->prepare($sql);
+        $stmt_detail->bind_param("ii", $user_id, $requested_invoice_id);
+    } else { // requested_quote_id
+        $sql .= " AND i.quote_id = ?";
+        $stmt_detail = $conn->prepare($sql);
+        $stmt_detail->bind_param("ii", $user_id, $requested_quote_id);
+    }
+    
     $stmt_detail->execute();
     $result_detail = $stmt_detail->get_result();
     if ($result_detail->num_rows > 0) {
         $invoice_detail = $result_detail->fetch_assoc();
-        // Decode JSON fields with null coalescing to prevent deprecation warnings
-        $invoice_detail['quote_details'] = json_decode($invoice_detail['quote_details'] ?? '{}', true);
-        $invoice_detail['junk_items_json'] = json_decode($invoice_detail['junk_items_json'] ?? '[]', true); // Added for junk removal details from quote
-        $invoice_detail['media_urls_json'] = json_decode($invoice_detail['media_urls_json'] ?? '[]', true); // Added for junk removal media from quote
-        $invoice_detail['booking_equipment_details'] = json_decode($invoice_detail['booking_equipment_details'] ?? '[]', true); // Ensure JSON is decoded
-        $invoice_detail['booking_junk_details'] = json_decode($invoice_detail['booking_junk_details'] ?? '{}', true); // Ensure JSON is decoded
+        
+        // Fetch line items
+        $invoice_detail['items'] = [];
+        $stmt_items = $conn->prepare("SELECT * FROM invoice_items WHERE invoice_id = ?");
+        $stmt_items->bind_param("i", $invoice_detail['id']);
+        $stmt_items->execute();
+        $result_items = $stmt_items->get_result();
+        while($item_row = $result_items->fetch_assoc()){
+            $invoice_detail['items'][] = $item_row;
+        }
+        $stmt_items->close();
+
     }
     $stmt_detail->close();
 }
@@ -117,9 +118,9 @@ function getStatusBadgeClass($status) {
                                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo getStatusBadgeClass($invoice['status']); ?>"><?php echo htmlspecialchars(strtoupper(str_replace('_', ' ', $invoice['status']))); ?></span>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <button class="text-blue-600 hover:text-blue-900 view-invoice-details" data-invoice-id="<?php echo htmlspecialchars($invoice['invoice_number']); ?>">View</button>
+                                    <button class="text-blue-600 hover:text-blue-900 view-invoice-details" data-invoice-id="<?php echo htmlspecialchars($invoice['id']); ?>">View</button>
                                     <?php if ($invoice['status'] == 'pending' || $invoice['status'] == 'partially_paid'): ?>
-                                        <button class="ml-3 text-green-600 hover:text-green-900 pay-invoice-btn" data-invoice-id="<?php echo htmlspecialchars($invoice['invoice_number']); ?>" data-amount="<?php echo htmlspecialchars($invoice['amount']); ?>">Pay Now</button>
+                                        <button class="ml-3 text-green-600 hover:text-green-900 pay-invoice-btn" data-invoice-id="<?php echo htmlspecialchars($invoice['id']); ?>" data-amount="<?php echo htmlspecialchars($invoice['amount']); ?>">Pay Now</button>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -136,8 +137,12 @@ function getStatusBadgeClass($status) {
         <i class="fas fa-arrow-left mr-2"></i>Back to Invoices
     </button>
     <?php if ($invoice_detail): ?>
-        <h2 class="text-2xl font-bold text-gray-800 mb-6" id="detail-invoice-number">Invoice Details for #<?php echo htmlspecialchars($invoice_detail['invoice_number']); ?></h2>
-
+        <div class="flex justify-between items-start">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6" id="detail-invoice-number">Invoice Details for #<?php echo htmlspecialchars($invoice_detail['invoice_number']); ?></h2>
+            <a href="/api/customer/download.php?type=invoice&id=<?php echo htmlspecialchars($invoice_detail['id']); ?>" target="_blank" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm">
+                <i class="fas fa-file-pdf mr-2"></i>Download PDF
+            </a>
+        </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
                 <p class="text-gray-600"><span class="font-medium">Invoice Date:</span> <span id="detail-invoice-date"><?php echo (new DateTime($invoice_detail['created_at']))->format('Y-m-d'); ?></span></p>
@@ -167,82 +172,17 @@ function getStatusBadgeClass($status) {
                 <tbody class="bg-white divide-y divide-gray-200">
                     <?php
                     $subtotal = 0;
-                    $items_to_display = [];
-
-                    $base_amount = $invoice_detail['booking_total_price'] ?? $invoice_detail['amount'];
-
-                    if ($invoice_detail['service_type'] == 'equipment_rental') {
-                        $equipment_name_display = $invoice_detail['equipment_name'] ?? ($invoice_detail['booking_equipment_details'][0]['equipment_name'] ?? 'Equipment Rental');
-                        $quantity_display = $invoice_detail['quantity'] ?? ($invoice_detail['booking_equipment_details'][0]['quantity'] ?? 1);
-                        $duration_days_display = $invoice_detail['duration_days'] ?? ($invoice_detail['booking_equipment_details'][0]['duration_days'] ?? null);
-                        $specific_needs_display = $invoice_detail['specific_needs'] ?? ($invoice_detail['booking_equipment_details'][0]['specific_needs'] ?? null);
-
-                        $desc = htmlspecialchars($equipment_name_display);
-                        if (!empty($duration_days_display)) {
-                            $desc .= " (for {$duration_days_display} days)";
+                    if(!empty($invoice_detail['items'])) {
+                        foreach ($invoice_detail['items'] as $item){
+                            $subtotal += $item['total'];
+                            echo '<tr>';
+                            echo '<td class="px-6 py-4 text-sm text-gray-900">' . htmlspecialchars($item['description']) . '</td>';
+                            echo '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">' . htmlspecialchars($item['quantity']) . '</td>';
+                            echo '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$' . number_format($item['unit_price'], 2) . '</td>';
+                            echo '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$' . number_format($item['total'], 2) . '</td>';
+                            echo '</tr>';
                         }
-                        if (!empty($specific_needs_display)) {
-                            $desc .= " - Needs: {$specific_needs_display}";
-                        }
-
-                        $qty = $quantity_display;
-                        $unit_price = ($qty > 0) ? ($base_amount / $qty) : 0;
-                        $item_total = $base_amount;
-                        $subtotal += $item_total;
-
-                        $items_to_display[] = [
-                            'desc' => $desc,
-                            'qty' => $qty,
-                            'unit_price' => $unit_price,
-                            'total' => $item_total
-                        ];
-                    } elseif ($invoice_detail['service_type'] == 'junk_removal') {
-                        $junk_desc = 'Junk Removal Service';
-                        $junk_items_from_quote = $invoice_detail['junk_items_json'] ?? [];
-                        $junk_items_from_booking = $invoice_detail['booking_junk_details']['junkItems'] ?? [];
-
-                        $items_source = !empty($junk_items_from_quote) ? $junk_items_from_quote : $junk_items_from_booking;
-
-                        if (!empty($items_source)) {
-                            $junk_types = array_column($items_source, 'itemType');
-                            $junk_desc .= ' (' . htmlspecialchars(implode(', ', $junk_types)) . ')';
-                        }
-                        $recommended_dumpster_size = $invoice_detail['recommended_dumpster_size'] ?? ($invoice_detail['booking_junk_details']['recommendedDumpsterSize'] ?? 'N/A');
-                        if (!empty($recommended_dumpster_size) && $recommended_dumpster_size != 'N/A') {
-                            $junk_desc .= " - Recommended: {$recommended_dumpster_size}";
-                        }
-
-                        $item_total = $invoice_detail['quoted_price'] ?? $base_amount;
-                        $subtotal = $item_total;
-
-                        $items_to_display[] = [
-                            'desc' => $junk_desc,
-                            'qty' => 1,
-                            'unit_price' => $item_total,
-                            'total' => $item_total
-                        ];
-                    } else {
-                        $item_total = $invoice_detail['quoted_price'] ?? $base_amount;
-                        $subtotal = $item_total;
-                        $items_to_display[] = [
-                            'desc' => 'General Service or Item',
-                            'qty' => 1,
-                            'unit_price' => $item_total,
-                            'total' => $item_total
-                        ];
                     }
-
-                    foreach ($items_to_display as $item):
-                    ?>
-                        <tr>
-                            <td class="px-6 py-4 text-sm text-gray-900"><?php echo $item['desc']; ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo $item['qty']; ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$<?php echo number_format($item['unit_price'], 2); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$<?php echo number_format($item['total'], 2); ?></td>
-                        </tr>
-                    <?php endforeach;
-                    $tax_amount = $invoice_detail['amount'] - $subtotal;
-                    if ($tax_amount < 0) $tax_amount = 0;
                     ?>
                 </tbody>
             </table>
@@ -251,15 +191,15 @@ function getStatusBadgeClass($status) {
         <div class="flex justify-end mt-4">
             <div class="w-full md:w-1/2 space-y-2 text-gray-700">
                 <div class="flex justify-between"><span class="font-medium">Subtotal:</span> <span>$<?php echo number_format($subtotal, 2); ?></span></div>
-                <div class="flex justify-between"><span class="font-medium">Discount:</span> <span>$0.00</span></div>
-                <div class="flex justify-between"><span class="font-medium">Tax (Est.):</span> <span>$<?php echo number_format($tax_amount, 2); ?></span></div>
+                <div class="flex justify-between text-red-500"><span class="font-medium">Discount:</span> <span>-$<?php echo number_format($invoice_detail['discount'], 2); ?></span></div>
+                <div class="flex justify-between"><span class="font-medium">Tax:</span> <span>$<?php echo number_format($invoice_detail['tax'], 2); ?></span></div>
                 <div class="flex justify-between text-xl font-bold border-t pt-2 border-gray-300"><span class="font-medium">Grand Total:</span> <span class="text-blue-700">$<?php echo number_format($invoice_detail['amount'], 2); ?></span></div>
             </div>
         </div>
 
         <div id="payment-actions" class="flex justify-end mt-6">
             <?php if ($invoice_detail['status'] == 'pending' || $invoice_detail['status'] == 'partially_paid'): ?>
-                <button class="py-2 px-5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 show-payment-form-btn pay-now-detail-btn" data-invoice-id="<?php echo htmlspecialchars($invoice_detail['invoice_number']); ?>" data-amount="<?php echo htmlspecialchars($invoice_detail['amount']); ?>">
+                <button class="py-2 px-5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 show-payment-form-btn pay-now-detail-btn" data-invoice-id="<?php echo htmlspecialchars($invoice_detail['id']); ?>" data-amount="<?php echo htmlspecialchars($invoice_detail['amount']); ?>">
                 <i class="fas fa-dollar-sign mr-2"></i>Pay Now
             </button>
             <?php endif; ?>
@@ -277,7 +217,7 @@ function getStatusBadgeClass($status) {
 
     <form id="payment-form" data-original-details="">
         <input type="hidden" name="action" value="process_payment">
-        <input type="hidden" name="invoice_number" id="payment-form-invoice-number-hidden">
+        <input type="hidden" name="invoice_id" id="payment-form-invoice-id-hidden">
         <input type="hidden" name="payment_method_token" id="payment-method-token-hidden">
 
         <div class="mb-5">
@@ -327,8 +267,8 @@ function getStatusBadgeClass($status) {
 
 <script>
     // These functions are specific to invoices.php and are made global for onclick attributes.
-    window.showInvoiceDetails = function(invoiceNumber) {
-        window.loadCustomerSection('invoices', { invoice_id: invoiceNumber });
+    window.showInvoiceDetails = function(invoiceId) {
+        window.loadCustomerSection('invoices', { invoice_id: invoiceId });
     };
 
     window.hideInvoiceDetails = function() {
@@ -429,8 +369,8 @@ function getStatusBadgeClass($status) {
         window.showPaymentForm = async function(invoiceId, amount) {
             resetPaymentForm();
 
-            document.getElementById('payment-invoice-id').textContent = invoiceId;
-            document.getElementById('payment-form-invoice-number-hidden').value = invoiceId;
+            document.getElementById('payment-invoice-id').textContent = 'ID ' + invoiceId;
+            document.getElementById('payment-form-invoice-id-hidden').value = invoiceId;
             document.getElementById('payment-amount').value = parseFloat(amount).toFixed(2);
 
             document.getElementById('invoice-detail-view').classList.add('hidden');
@@ -438,8 +378,7 @@ function getStatusBadgeClass($status) {
             document.getElementById('payment-form-view').classList.remove('hidden');
 
             try {
-                // *** CORRECTED PATH ***
-                const response = await fetch('../api/customer/payment_methods.php?action=get_default_method');
+                const response = await fetch('/api/customer/payment_methods.php?action=get_default_method');
                 const result = await response.json();
                 if (result.success && result.method) {
                     populateWithDefault(result.method);
@@ -505,8 +444,7 @@ function getStatusBadgeClass($status) {
 
                 try {
                     const formData = new FormData(this);
-                     // *** CORRECTED PATH ***
-                    const response = await fetch('../api/payments.php', {
+                    const response = await fetch('/api/payments.php', {
                         method: 'POST',
                         body: formData
                     });
