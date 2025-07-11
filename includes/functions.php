@@ -9,9 +9,6 @@ use PHPMailer\PHPMailer\Exception;
 require_once __DIR__ . '/../vendor/autoload.php';
 
 // --- Environment Variable Loading ---
-// **THE FIX**: This block is now simplified to ensure it runs every time.
-// It loads the .env file from the root directory, populating the $_ENV superglobal
-// with your database and SMTP credentials. This resolves the "Undefined array key" warnings.
 try {
     $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../');
     $dotenv->load();
@@ -91,25 +88,31 @@ function sendEmail($to, $subject, $body, $altBody = '') {
     $mail = new PHPMailer(true);
 
     try {
-        // Server settings from the now-loaded .env file
+        // Server settings from the now-loaded .env file.
+        // Use getenv() as a fallback for $_ENV if environment variables are set differently on your server.
+        // Also, explicitly cast to string to prevent warnings if values are empty/null.
         $mail->isSMTP();
-        $mail->Host       = $_ENV['SMTP_HOST'];
+        $mail->Host       = (string)($_ENV['SMTP_HOST'] ?? getenv('SMTP_HOST'));
         $mail->SMTPAuth   = true;
-        $mail->Username   = $_ENV['SMTP_USER'];
-        $mail->Password   = $_ENV['SMTP_PASS'];
+        $mail->Username   = (string)($_ENV['SMTP_USER'] ?? getenv('SMTP_USER'));
+        $mail->Password   = (string)($_ENV['SMTP_PASS'] ?? getenv('SMTP_PASS'));
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = $_ENV['SMTP_PORT'];
+        $mail->Port       = (int)($_ENV['SMTP_PORT'] ?? getenv('SMTP_PORT'));
 
         // Recipients
-        $mail->setFrom($_ENV['SMTP_FROM_EMAIL'], $_ENV['SMTP_FROM_NAME']);
+        $mail->setFrom(
+            (string)($_ENV['SMTP_FROM_EMAIL'] ?? getenv('SMTP_FROM_EMAIL')),
+            (string)($_ENV['SMTP_FROM_NAME'] ?? getenv('SMTP_FROM_NAME'))
+        );
         $mail->addAddress($to);
 
         // Content
         $mail->isHTML(true);
-        $mail->Subject = $subject;
-        $mail->Body    = $body;
-        // **Secondary Fix**: Safely generate the plain-text body to prevent the "Deprecated" notice.
-        $mail->AltBody = empty($altBody) ? strip_tags($body) : $altBody;
+        $mail->Subject = (string)$subject; // Ensure subject is a string
+        $mail->Body    = (string)$body;    // Ensure body is a string
+        // Safely generate the plain-text body to prevent the "Deprecated" notice.
+        // Ensure $body is treated as a string before strip_tags.
+        $mail->AltBody = empty($altBody) ? strip_tags((string)$body) : (string)$altBody;
 
         $mail->send();
         return true;
@@ -184,13 +187,12 @@ function get_admin_notification_counts() {
  * @throws Exception on any failure.
  */
 function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
-    // ... (This function remains the same as the previously corrected version) ...
     // Fetch all necessary data from the invoice, quote, and user tables.
     $stmt_fetch = $conn->prepare("
         SELECT
             i.user_id, i.amount, i.quote_id,
             q.service_type, q.location, q.delivery_date, q.removal_date, q.live_load_needed,
-            q.is_urgent, q.driver_instructions,
+            q.is_urgent, q.driver_instructions, q.daily_rate,
             qed.equipment_name, qed.quantity, qed.specific_needs, qed.duration_days,
             jrd.junk_items_json, jrd.recommended_dumpster_size,
             u.first_name, u.email
@@ -210,6 +212,7 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
         throw new Exception("Could not retrieve necessary data to create booking for invoice ID: {$invoice_id}");
     }
 
+    // Update quote status to 'converted_to_booking'
     if ($data['quote_id']) {
         $stmt_quote = $conn->prepare("UPDATE quotes SET status = 'converted_to_booking' WHERE id = ?");
         $stmt_quote->bind_param("i", $data['quote_id']);
@@ -224,18 +227,70 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
     $junk_details_json = null;
 
     if ($data['service_type'] == 'equipment_rental') {
-        $duration = $data['duration_days'] ?? 7;
+        // Fetch all equipment details for the quote to properly serialize them
+        $equipment_items_for_json = [];
+        $stmt_eq_details = $conn->prepare("SELECT equipment_name, quantity, duration_days, specific_needs FROM quote_equipment_details WHERE quote_id = ?");
+        $stmt_eq_details->bind_param("i", $data['quote_id']);
+        $stmt_eq_details->execute();
+        $eq_result = $stmt_eq_details->get_result();
+        while($eq_row = $eq_result->fetch_assoc()) {
+            $equipment_items_for_json[] = $eq_row;
+        }
+        $stmt_eq_details->close();
+
+        $equipment_details_json = json_encode($equipment_items_for_json);
+
+        // Calculate end_date based on duration_days from the first equipment item if available, otherwise default
+        $duration = !empty($equipment_items_for_json[0]['duration_days']) ? $equipment_items_for_json[0]['duration_days'] : 7; // Default to 7 days
         $end_date = $start_date ? (new DateTime($start_date))->modify("+$duration days")->format('Y-m-d') : null;
-        $equipment_details_json = json_encode([['equipment_name' => $data['equipment_name'], 'quantity' => $data['quantity'], 'specific_needs' => $data['specific_needs']]]);
+
     } else if ($data['service_type'] == 'junk_removal') {
-        $junk_details_json = json_encode(['junkItems' => json_decode($data['junk_items_json'] ?? '[]', true), 'recommendedDumpsterSize' => $data['recommended_dumpster_size']]);
+        // Fetch junk removal details for the quote to properly serialize them
+        $junk_details_for_json = [];
+        $stmt_junk_details = $conn->prepare("SELECT junk_items_json, recommended_dumpster_size, additional_comment FROM junk_removal_details WHERE quote_id = ?");
+        $stmt_junk_details->bind_param("i", $data['quote_id']);
+        $stmt_junk_details->execute();
+        $junk_result = $stmt_junk_details->get_result()->fetch_assoc();
+        $stmt_junk_details->close();
+
+        if ($junk_result) {
+            $junk_details_for_json = [
+                'junkItems' => json_decode($junk_result['junk_items_json'] ?? '[]', true),
+                'recommendedDumpsterSize' => $junk_result['recommended_dumpster_size'],
+                'additionalComment' => $junk_result['additional_comment']
+            ];
+        }
+        $junk_details_json = json_encode($junk_details_for_json);
     }
     
+    // Convert boolean-like values to actual integers (0 or 1) for tinyint columns
+    $live_load_requested_int = (int)($data['live_load_needed'] ?? 0);
+    $is_urgent_int = (int)($data['is_urgent'] ?? 0);
+
     $stmt_booking = $conn->prepare("
         INSERT INTO bookings (invoice_id, user_id, booking_number, service_type, status, start_date, end_date, delivery_location, delivery_instructions, live_load_requested, is_urgent, total_price, equipment_details, junk_details)
         VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
-    $stmt_booking->bind_param("iissssssiisss", $invoice_id, $data['user_id'], $booking_number, $data['service_type'], $start_date, $end_date, $data['location'], $data['driver_instructions'], $data['live_load_needed'], $data['is_urgent'], $data['amount'], $equipment_details_json, $junk_details_json);
+    // Corrected bind_param types: iissssiidsdss
+    // invoice_id (i), user_id (i), booking_number (s), service_type (s),
+    // start_date (s), end_date (s), delivery_location (s), delivery_instructions (s),
+    // live_load_requested (i), is_urgent (i), total_price (d), equipment_details (s), junk_details (s)
+    $stmt_booking->bind_param(
+        "iissssiidsdss",
+        $invoice_id,
+        $data['user_id'],
+        $booking_number,
+        $data['service_type'],
+        $start_date,
+        $end_date,
+        $data['location'],
+        $data['driver_instructions'],
+        $live_load_requested_int, // Corrected type
+        $is_urgent_int,           // Corrected type
+        $data['amount'],          // Corrected type
+        $equipment_details_json,
+        $junk_details_json
+    );
     
     if (!$stmt_booking->execute()) {
         throw new Exception("Database insert failed for booking: " . $stmt_booking->error);
@@ -257,4 +312,3 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
 
     return $booking_id;
 }
-?>

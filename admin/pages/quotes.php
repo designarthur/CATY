@@ -18,13 +18,13 @@ $quote_detail_view_data = null;
 $requested_quote_id = filter_input(INPUT_GET, 'quote_id', FILTER_VALIDATE_INT);
 
 if ($requested_quote_id) {
-    // --- Fetch Data for Detail View ---
+    // --- Fetch data for the detail/edit view ---
     $stmt_detail = $conn->prepare("
         SELECT
             q.id, q.service_type, q.status, q.created_at, q.location, q.quoted_price, q.customer_type,
             q.delivery_date, q.delivery_time, q.removal_date, q.removal_time, q.is_urgent, q.live_load_needed,
             q.swap_charge, q.relocation_charge, q.admin_notes, q.quote_details, q.driver_instructions,
-            q.discount, q.tax, q.attachment_path,
+            q.discount, q.tax, q.attachment_path, q.daily_rate, q.is_swap_included, q.is_relocation_included,
             u.first_name, u.last_name, u.email, u.phone_number
         FROM quotes q
         JOIN users u ON q.user_id = u.id
@@ -112,7 +112,7 @@ function getAdminStatusBadgeClass($status) {
     <div class="bg-white p-6 rounded-lg shadow-md border border-blue-200">
         <div class="flex justify-between items-center mb-4">
             <h2 class="text-xl font-semibold text-gray-700"><i class="fas fa-file-invoice mr-2 text-blue-600"></i>All Customer Quotes</h2>
-            <button id="bulk-delete-quotes-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 shadow-md hidden">
+             <button id="bulk-delete-quotes-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 shadow-md hidden">
                 <i class="fas fa-trash-alt mr-2"></i>Delete Selected
             </button>
         </div>
@@ -123,7 +123,7 @@ function getAdminStatusBadgeClass($status) {
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-blue-50">
                         <tr>
-                            <th scope="col" class="px-6 py-3 text-left">
+                            <th class="px-6 py-3 text-left">
                                 <input type="checkbox" id="select-all-quotes" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Quote ID</th>
@@ -137,7 +137,7 @@ function getAdminStatusBadgeClass($status) {
                         <?php foreach ($quotes as $quote): ?>
                             <tr>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <input type="checkbox" class="quote-checkbox h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" value="<?php echo htmlspecialchars($quote['id']); ?>">
+                                     <input type="checkbox" class="quote-checkbox h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" value="<?php echo htmlspecialchars($quote['id']); ?>">
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#Q<?php echo htmlspecialchars($quote['id']); ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars($quote['first_name'] . ' ' . $quote['last_name']); ?></td>
@@ -216,15 +216,35 @@ function getAdminStatusBadgeClass($status) {
                             <input type="hidden" name="quote_id" value="<?php echo htmlspecialchars($quote_detail_view_data['id']); ?>">
                             <div class="mb-4">
                                 <label for="quote-price" class="block text-sm font-medium text-gray-700">Base Price ($)</label>
-                                <input type="number" id="quote-price" name="quoted_price" step="0.01" min="0" class="mt-1 p-2 border border-gray-300 rounded-md w-full" required>
+                                <input type="number" id="quote-price" name="quoted_price" step="0.01" min="0" class="mt-1 p-2 border border-gray-300 rounded-md w-full" value="<?php echo htmlspecialchars($quote_detail_view_data['quoted_price'] ?? ''); ?>" required>
+                            </div>
+                            <div class="mb-4">
+                                <label for="daily-rate" class="block text-sm font-medium text-gray-700">Daily Rate (for extensions) ($)</label>
+                                <input type="number" id="daily-rate" name="daily_rate" step="0.01" min="0" class="mt-1 p-2 border border-gray-300 rounded-md w-full" value="<?php echo htmlspecialchars($quote_detail_view_data['daily_rate'] ?? ''); ?>">
+                            </div>
+                             <div class="mb-4">
+                                <label for="relocation-charge" class="block text-sm font-medium text-gray-700">Relocation Charge ($)</label>
+                                <input type="number" id="relocation-charge" name="relocation_charge" step="0.01" min="0" class="mt-1 p-2 border border-gray-300 rounded-md w-full" value="<?php echo htmlspecialchars($quote_detail_view_data['relocation_charge'] ?? ''); ?>">
+                                <div class="flex items-center mt-2">
+                                    <input type="checkbox" id="is-relocation-included" name="is_relocation_included" class="h-4 w-4 text-blue-600 border-gray-300 rounded" <?php echo ($quote_detail_view_data['is_relocation_included'] ?? false) ? 'checked' : ''; ?>>
+                                    <label for="is-relocation-included" class="ml-2 block text-sm text-gray-900">Include in Base Price (no extra charge)</label>
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <label for="swap-charge" class="block text-sm font-medium text-gray-700">Swap Charge ($)</label>
+                                <input type="number" id="swap-charge" name="swap_charge" step="0.01" min="0" class="mt-1 p-2 border border-gray-300 rounded-md w-full" value="<?php echo htmlspecialchars($quote_detail_view_data['swap_charge'] ?? ''); ?>">
+                                <div class="flex items-center mt-2">
+                                    <input type="checkbox" id="is-swap-included" name="is_swap_included" class="h-4 w-4 text-blue-600 border-gray-300 rounded" <?php echo ($quote_detail_view_data['is_swap_included'] ?? false) ? 'checked' : ''; ?>>
+                                    <label for="is-swap-included" class="ml-2 block text-sm text-gray-900">Include in Base Price (no extra charge)</label>
+                                </div>
                             </div>
                              <div class="mb-4">
                                 <label for="discount" class="block text-sm font-medium text-gray-700">Discount ($)</label>
-                                <input type="number" id="discount" name="discount" step="0.01" min="0" placeholder="e.g., 50.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
+                                <input type="number" id="discount" name="discount" step="0.01" min="0" placeholder="e.g., 50.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full" value="<?php echo htmlspecialchars($quote_detail_view_data['discount'] ?? ''); ?>">
                             </div>
                              <div class="mb-4">
                                 <label for="tax" class="block text-sm font-medium text-gray-700">Tax ($)</label>
-                                <input type="number" id="tax" name="tax" step="0.01" min="0" placeholder="e.g., 15.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
+                                <input type="number" id="tax" name="tax" step="0.01" min="0" placeholder="e.g., 15.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full" value="<?php echo htmlspecialchars($quote_detail_view_data['tax'] ?? ''); ?>">
                             </div>
                              <div class="mb-4">
                                 <label for="attachment" class="block text-sm font-medium text-gray-700">Attach File (Optional)</label>
@@ -232,19 +252,38 @@ function getAdminStatusBadgeClass($status) {
                             </div>
                              <div class="mb-4">
                                 <label for="admin_notes" class="block text-sm font-medium text-gray-700">Admin Notes</label>
-                                <textarea id="admin_notes" name="admin_notes" rows="3" class="mt-1 p-2 border border-gray-300 rounded-md w-full"></textarea>
+                                <textarea id="admin_notes" name="admin_notes" rows="3" class="mt-1 p-2 border border-gray-300 rounded-md w-full"><?php echo htmlspecialchars($quote_detail_view_data['admin_notes'] ?? ''); ?></textarea>
                             </div>
                             <div class="flex justify-end">
                                 <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">Submit Quote</button>
                             </div>
                         </form>
-                    <?php elseif ($quote_detail_view_data['status'] === 'quoted'): ?>
+                    <?php elseif ($quote_detail_view_data['status'] === 'quoted' || $quote_detail_view_data['status'] === 'accepted' || $quote_detail_view_data['status'] === 'converted_to_booking'): ?>
                         <div class="space-y-3">
+                            <h4 class="text-lg font-bold text-gray-800 mb-2">Our Quotation:</h4>
+                            <p class="text-gray-700 mb-2"><span class="font-medium">Quoted Price:</span> <span class="text-green-600 text-xl font-bold">$<?php echo number_format($quote_detail_view_data['quoted_price'], 2); ?></span></p>
+                            <?php if (!empty($quote_detail_view_data['daily_rate']) && $quote_detail_view_data['daily_rate'] > 0): ?>
+                                <p class="text-gray-700 mb-2"><span class="font-medium">Daily Rate:</span> $<?php echo number_format($quote_detail_view_data['daily_rate'], 2); ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($quote_detail_view_data['relocation_charge']) && $quote_detail_view_data['relocation_charge'] > 0): ?>
+                                <p class="text-gray-700 mb-2"><span class="font-medium">Relocation Charge:</span> $<?php echo number_format($quote_detail_view_data['relocation_charge'], 2); ?> (<?php echo ($quote_detail_view_data['is_relocation_included'] ?? false) ? 'Included' : 'Extra'; ?>)</p>
+                            <?php endif; ?>
+                            <?php if (!empty($quote_detail_view_data['swap_charge']) && $quote_detail_view_data['swap_charge'] > 0): ?>
+                                <p class="text-gray-700 mb-2"><span class="font-medium">Swap Charge:</span> $<?php echo number_format($quote_detail_view_data['swap_charge'], 2); ?> (<?php echo ($quote_detail_view_data['is_swap_included'] ?? false) ? 'Included' : 'Extra'; ?>)</p>
+                            <?php endif; ?>
+                            <?php if (!empty($quote_detail_view_data['discount']) && $quote_detail_view_data['discount'] > 0): ?>
+                                <p class="text-gray-700 mb-2"><span class="font-medium">Discount:</span> -$<?php echo number_format($quote_detail_view_data['discount'], 2); ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($quote_detail_view_data['tax']) && $quote_detail_view_data['tax'] > 0): ?>
+                                <p class="text-gray-700 mb-2"><span class="font-medium">Tax:</span> $<?php echo number_format($quote_detail_view_data['tax'], 2); ?></p>
+                            <?php endif; ?>
+                            <?php if (!empty($quote_detail_view_data['admin_notes'])): ?>
+                                <p class="text-gray-700 mb-4"><span class="font-medium">Admin Notes:</span> <?php echo nl2br(htmlspecialchars($quote_detail_view_data['admin_notes'])); ?></p>
+                            <?php endif; ?>
+
                              <button class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 resend-quote-btn" data-id="<?php echo htmlspecialchars($quote_detail_view_data['id']); ?>">Resend Quote</button>
                              <button class="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 reject-quote-btn" data-id="<?php echo htmlspecialchars($quote_detail_view_data['id']); ?>">Reject Quote</button>
                         </div>
-                    <?php elseif (in_array($quote_detail_view_data['status'], ['accepted', 'converted_to_booking'])): ?>
-                        <button class="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 view-related-booking-btn" data-quote-id="<?php echo htmlspecialchars($quote_detail_view_data['id']); ?>">View Related Booking</button>
                     <?php else: ?>
                         <p class="text-gray-500">No actions available for this quote status.</p>
                     <?php endif; ?>
@@ -283,15 +322,16 @@ function getAdminStatusBadgeClass($status) {
         });
     }
 
-    quoteCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            if (!this.checked) {
-                selectAllCheckbox.checked = false;
+    // Attach listeners to dynamically loaded content via delegation
+    document.body.addEventListener('change', function(event) {
+        if (event.target.classList.contains('quote-checkbox')) {
+            if (!event.target.checked) {
+                if (selectAllCheckbox) selectAllCheckbox.checked = false;
             }
             toggleBulkDeleteButton();
-        });
+        }
     });
-    
+
     if (bulkDeleteBtn) {
         bulkDeleteBtn.addEventListener('click', function() {
             const selectedIds = Array.from(document.querySelectorAll('.quote-checkbox:checked')).map(cb => cb.value);
@@ -302,7 +342,7 @@ function getAdminStatusBadgeClass($status) {
 
             showConfirmationModal(
                 'Delete Selected Quotes',
-                `Are you sure you want to delete ${selectedIds.length} selected quote(s)? This action cannot be undone.`,
+                `Are you sure you want to delete ${selectedIds.length} selected quote(s)? This action cannot be undone and will delete related bookings.`,
                 async (confirmed) => {
                     if (confirmed) {
                         const formData = new FormData();
@@ -318,7 +358,7 @@ function getAdminStatusBadgeClass($status) {
     }
 
 
-    contentArea.addEventListener('click', function(event) {
+    document.body.addEventListener('click', function(event) {
         const target = event.target.closest('button');
         if (!target) return;
 
@@ -346,8 +386,7 @@ function getAdminStatusBadgeClass($status) {
                 `Are you sure you want to reject quote #Q${quoteId}?`,
                 async (confirmed) => {
                     if (confirmed) { handleQuoteAction('reject_quote', quoteId); }
-                },
-                'Reject Quote', 'bg-red-600'
+                }
             );
         }
         
@@ -363,7 +402,7 @@ function getAdminStatusBadgeClass($status) {
                     }
                 })
                 .catch(error => {
-                    console.error('Error fetching booking ID:', error);
+                    console.error('Error fetching booking ID for quote:', error);
                     showToast('An error occurred while trying to find the booking.', 'error');
                 });
         }
@@ -377,7 +416,7 @@ function getAdminStatusBadgeClass($status) {
             formData.append('action', 'submit_quote');
             
             if (!formData.get('quoted_price') || parseFloat(formData.get('quoted_price')) <= 0) {
-                showToast('Please enter a valid quoted price.', 'error');
+                showToast('Please enter a valid base price.', 'error');
                 return;
             }
             await handleQuoteAction(formData);
@@ -392,6 +431,9 @@ function getAdminStatusBadgeClass($status) {
             if (quoteId) formData.append('quote_id', quoteId);
         } else {
             formData = actionOrFormData;
+            // Handle checkboxes for is_relocation_included and is_swap_included
+            formData.set('is_relocation_included', document.getElementById('is-relocation-included')?.checked ? '1' : '0');
+            formData.set('is_swap_included', document.getElementById('is-swap-included')?.checked ? '1' : '0');
         }
 
         const actionText = formData.get('action').replace(/_/g, ' ');
@@ -402,7 +444,7 @@ function getAdminStatusBadgeClass($status) {
             const result = await response.json();
             if (result.success) {
                 showToast(result.message, 'success');
-                window.loadAdminSection('quotes');
+                window.loadAdminSection('quotes', { quote_id: formData.get('quote_id') }); // Reload specific quote after action
             } else {
                 showToast(result.message, 'error');
             }

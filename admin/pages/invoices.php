@@ -7,11 +7,17 @@ if (session_status() == PHP_SESSION_NONE) {
 }
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/session.php';
+require_once __DIR__ . '/../../includes/functions.php'; // Required for generate_csrf_token()
 
 if (!is_logged_in() || !has_role('admin')) {
     echo '<div class="text-red-500 text-center p-8">Unauthorized access.</div>';
     exit;
 }
+
+// Generate CSRF token for this page
+generate_csrf_token();
+$csrf_token = $_SESSION['csrf_token'];
+
 
 $invoices = [];
 $invoice_detail_view_data = null;
@@ -150,6 +156,8 @@ function getAdminInvoiceStatusBadge($status) {
         </div>
         <form id="edit-invoice-form">
             <input type="hidden" name="invoice_id" value="<?php echo $invoice_detail_view_data['id']; ?>">
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
+
             <div class="overflow-x-auto mb-4">
                 <table class="min-w-full" id="invoice-items-table">
                     <thead class="bg-gray-50">
@@ -196,6 +204,23 @@ function getAdminInvoiceStatusBadge($status) {
                     </div>
                 </div>
             </div>
+
+            <div class="mt-6">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4">Invoice Status</h3>
+                <label for="invoice-status-select" class="block text-sm font-medium text-gray-700 mb-2">Update Invoice Status</label>
+                <select id="invoice-status-select" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
+                    <option value="pending" <?php echo ($invoice_detail_view_data['status'] === 'pending') ? 'selected' : ''; ?>>Pending</option>
+                    <option value="paid" <?php echo ($invoice_detail_view_data['status'] === 'paid') ? 'selected' : ''; ?>>Paid</option>
+                    <option value="partially_paid" <?php echo ($invoice_detail_view_data['status'] === 'partially_paid') ? 'selected' : ''; ?>>Partially Paid</option>
+                    <option value="cancelled" <?php echo ($invoice_detail_view_data['status'] === 'cancelled') ? 'selected' : ''; ?>>Cancelled</option>
+                </select>
+                <button type="button" id="update-invoice-status-btn" class="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold shadow-md"
+                    data-invoice-id="<?php echo htmlspecialchars($invoice_detail_view_data['id']); ?>"
+                    data-csrf-token="<?php echo htmlspecialchars($csrf_token); ?>">
+                    <i class="fas fa-sync-alt mr-2"></i>Update Status
+                </button>
+            </div>
+
 
             <div class="flex justify-end mt-6">
                 <button type="submit" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold shadow-md">
@@ -330,6 +355,49 @@ document.body.addEventListener('click', function(event) {
         event.target.closest('tr').remove(); // Remove the entire row.
         calculateTotals(); // Recalculate totals after removing a row.
     }
+
+    // Handle click on "Update Status" button in edit view.
+    if (event.target.id === 'update-invoice-status-btn') {
+        const invoiceId = event.target.dataset.invoiceId;
+        const newStatus = document.getElementById('invoice-status-select').value;
+        const newStatusText = document.getElementById('invoice-status-select').options[document.getElementById('invoice-status-select').selectedIndex].text;
+        const csrfToken = event.target.dataset.csrfToken;
+
+
+        showConfirmationModal(
+            'Confirm Status Change',
+            `Are you sure you want to change the invoice status to "${newStatusText}"?`,
+            async (confirmed) => {
+                if (confirmed) {
+                    showToast('Updating invoice status...', 'info');
+                    const formData = new FormData();
+                    formData.append('action', 'update_status');
+                    formData.append('invoice_id', invoiceId);
+                    formData.append('status', newStatus);
+                    formData.append('csrf_token', csrfToken); // Add CSRF token here
+
+                    try {
+                        const response = await fetch('/api/admin/invoices.php', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            showToast(result.message, 'success');
+                            window.loadAdminSection('invoices', {invoice_id: invoiceId}); // Reload to show updated status
+                        } else {
+                            showToast(result.message, 'error');
+                        }
+                    } catch (error) {
+                        console.error('Update invoice status API Error:', error);
+                        showToast('An unexpected error occurred during status update.', 'error');
+                    }
+                }
+            },
+            'Update Status',
+            'bg-blue-600'
+        );
+    }
 });
 
 // Recalculate totals on input change in edit view.
@@ -368,6 +436,7 @@ if(editInvoiceForm) {
         formData.append('items', JSON.stringify(items)); // Send items as a JSON string.
         formData.append('discount', document.getElementById('discount').value);
         formData.append('tax', document.getElementById('tax').value);
+        formData.append('csrf_token', document.querySelector('input[name="csrf_token"]').value); // Add CSRF token here
 
         try {
             // Send the update request to the API.

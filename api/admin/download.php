@@ -55,7 +55,8 @@ $pdf->SetFont('Arial','',12);
 
 if ($type === 'invoice') {
     // Fetch invoice data
-    $stmt = $conn->prepare("SELECT i.*, u.first_name, u.last_name FROM invoices i JOIN users u ON i.user_id = u.id WHERE i.id = ?");
+    // Changed i.* to explicit column listing to prevent potential issues with column fetching.
+    $stmt = $conn->prepare("SELECT i.id, i.invoice_number, i.amount, i.status, i.created_at, i.due_date, i.payment_method, i.transaction_id, i.notes, i.booking_id, i.discount, i.tax, i.is_viewed_by_admin, i.quote_id, i.user_id, u.first_name, u.last_name FROM invoices i JOIN users u ON i.user_id = u.id WHERE i.id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $invoice = $stmt->get_result()->fetch_assoc();
@@ -91,11 +92,17 @@ if ($type === 'invoice') {
 
         $pdf->Ln(10);
         $pdf->Cell(145,10,'Subtotal',0,0,'R');
-        $pdf->Cell(45,10,'$'.number_format($invoice['amount'] + $invoice['discount'] - $invoice['tax'],2),1,'R');
+        // The total amount used here from $invoice['amount'] is the final amount after discount and tax,
+        // so to get the subtotal before them, we reverse the calculation.
+        $subtotal_calculated = $invoice['amount'] + $invoice['discount'] - $invoice['tax'];
+        $pdf->Cell(45,10,'$'.number_format($subtotal_calculated,2),1,'R');
+        $pdf->Ln(); // Add new line after subtotal
         $pdf->Cell(145,10,'Discount',0,0,'R');
         $pdf->Cell(45,10,'-$'.number_format($invoice['discount'],2),1,'R');
+        $pdf->Ln(); // Add new line after discount
         $pdf->Cell(145,10,'Tax',0,0,'R');
         $pdf->Cell(45,10,'$'.number_format($invoice['tax'],2),1,'R');
+        $pdf->Ln(); // Add new line after tax
         $pdf->SetFont('Arial','B',14);
         $pdf->Cell(145,10,'Grand Total',0,0,'R');
         $pdf->Cell(45,10,'$'.number_format($invoice['amount'],2),1,'R');
@@ -131,13 +138,18 @@ if ($type === 'invoice') {
         $pdf->Ln(10);
         $pdf->Cell(145,10,'Quoted Price',0,0,'R');
         $pdf->Cell(45,10,'$'.number_format($quote['quoted_price'],2),1,'R');
+        $pdf->Ln(); // Add new line after Quoted Price
         $pdf->Cell(145,10,'Discount',0,0,'R');
         $pdf->Cell(45,10,'-$'.number_format($quote['discount'],2),1,'R');
+        $pdf->Ln(); // Add new line after Discount
         $pdf->Cell(145,10,'Tax',0,0,'R');
         $pdf->Cell(45,10,'$'.number_format($quote['tax'],2),1,'R');
+        $pdf->Ln(); // Add new line after Tax
         $pdf->SetFont('Arial','B',14);
         $pdf->Cell(145,10,'Total',0,0,'R');
-        $pdf->Cell(45,10,'$'.number_format($quote['quoted_price'] - $quote['discount'] + $quote['tax'],2),1,'R');
+        // Ensure to calculate the correct total by applying discount and tax
+        $total_calculated = $quote['quoted_price'] - $quote['discount'] + $quote['tax'];
+        $pdf->Cell(45,10,'$'.number_format($total_calculated,2),1,'R');
 
         if($quote['attachment_path']){
             $pdf->Ln(10);

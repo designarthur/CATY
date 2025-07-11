@@ -24,7 +24,8 @@ $expanded_quote_id = $_GET['quote_id'] ?? null;
 // The main query remains the same as it fetches the parent quote record
 $query = "SELECT
             q.id, q.service_type, q.status, q.created_at, q.location, q.quoted_price, q.admin_notes, q.customer_type,
-            q.delivery_date, q.delivery_time, q.removal_date, q.removal_time, q.live_load_needed, q.is_urgent, q.driver_instructions
+            q.delivery_date, q.delivery_time, q.removal_date, q.removal_time, q.live_load_needed, q.is_urgent, q.driver_instructions,
+            q.daily_rate, q.swap_charge, q.relocation_charge, q.discount, q.tax, q.is_swap_included, q.is_relocation_included
           FROM
             quotes q
           WHERE
@@ -162,14 +163,64 @@ function getCustomerStatusBadgeClass($status) {
                                             <?php endforeach; ?>
                                         </ul>
                                     <?php elseif ($quote['service_type'] === 'junk_removal' && !empty($quote['junk_details'])): ?>
+                                        <h4 class="text-md font-semibold text-gray-700 mb-2">Junk Removal Details:</h4>
+                                        <ul class="list-disc list-inside space-y-2 pl-4">
+                                            <?php if (!empty($quote['junk_details']['junk_items_json'])): ?>
+                                                <?php foreach ($quote['junk_details']['junk_items_json'] as $item): ?>
+                                                    <li><?php echo htmlspecialchars($item['itemType'] ?? 'N/A'); ?> (Qty: <?php echo htmlspecialchars($item['quantity'] ?? 'N/A'); ?>)</li>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <li>No specific junk items listed.</li>
+                                            <?php endif; ?>
+                                            <?php if (!empty($quote['junk_details']['recommended_dumpster_size'])): ?>
+                                                <li>Recommended Dumpster Size: <?php echo htmlspecialchars($quote['junk_details']['recommended_dumpster_size']); ?></li>
+                                            <?php endif; ?>
+                                            <?php if (!empty($quote['junk_details']['additional_comment'])): ?>
+                                                <li>Additional Comments: <?php echo htmlspecialchars($quote['junk_details']['additional_comment']); ?></li>
+                                            <?php endif; ?>
+                                        </ul>
+                                        <?php if (!empty($quote['junk_details']['media_urls_json'])): ?>
+                                            <h4 class="text-md font-semibold text-gray-700 mt-4 mb-2">Uploaded Media:</h4>
+                                            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                                <?php foreach ($quote['junk_details']['media_urls_json'] as $media_url): ?>
+                                                    <?php $fileExtension = pathinfo($media_url, PATHINFO_EXTENSION); ?>
+                                                    <?php if (in_array(strtolower($fileExtension), ['jpg', 'jpeg', 'png', 'gif'])): ?>
+                                                        <img src="<?php echo htmlspecialchars($media_url); ?>" class="w-full h-24 object-cover rounded-lg cursor-pointer" onclick="showImageModal('<?php echo htmlspecialchars($media_url); ?>')">
+                                                    <?php elseif (in_array(strtolower($fileExtension), ['mp4', 'webm', 'ogg'])): ?>
+                                                        <video src="<?php echo htmlspecialchars($media_url); ?>" controls class="w-full h-24 object-cover rounded-lg"></video>
+                                                    <?php endif; ?>
+                                                <?php endforeach; ?>
+                                            </div>
                                         <?php endif; ?>
+                                    <?php endif; ?>
 
                                     <?php if ($quote['status'] === 'quoted' || $quote['status'] === 'accepted' || $quote['status'] === 'converted_to_booking'): ?>
                                         <div class="mt-6 pt-4 border-t border-gray-200">
                                             <h4 class="text-lg font-bold text-gray-800 mb-2">Our Quotation:</h4>
                                             <p class="text-gray-700 mb-2"><span class="font-medium">Quoted Price:</span> <span class="text-green-600 text-xl font-bold">$<?php echo number_format($quote['quoted_price'], 2); ?></span></p>
+                                            
+                                            <?php if (!empty($quote['daily_rate']) && $quote['daily_rate'] > 0): ?>
+                                                <p class="text-gray-700 mb-2"><span class="font-medium">Daily Rate (for extensions):</span> $<?php echo number_format($quote['daily_rate'], 2); ?></p>
+                                            <?php endif; ?>
+
+                                            <?php if (!empty($quote['relocation_charge']) && $quote['relocation_charge'] > 0): ?>
+                                                <p class="text-gray-700 mb-2"><span class="font-medium">Relocation Charge:</span> $<?php echo number_format($quote['relocation_charge'], 2); ?> (<?php echo ($quote['is_relocation_included'] ?? false) ? 'Included in base price' : 'Additional charge'; ?>)</p>
+                                            <?php endif; ?>
+
+                                            <?php if (!empty($quote['swap_charge']) && $quote['swap_charge'] > 0): ?>
+                                                <p class="text-gray-700 mb-2"><span class="font-medium">Swap Charge:</span> $<?php echo number_format($quote['swap_charge'], 2); ?> (<?php echo ($quote['is_swap_included'] ?? false) ? 'Included in base price' : 'Additional charge'; ?>)</p>
+                                            <?php endif; ?>
+
+                                            <?php if (!empty($quote['discount']) && $quote['discount'] > 0): ?>
+                                                <p class="text-gray-700 mb-2"><span class="font-medium">Discount:</span> -$<?php echo number_format($quote['discount'], 2); ?></p>
+                                            <?php endif; ?>
+
+                                            <?php if (!empty($quote['tax']) && $quote['tax'] > 0): ?>
+                                                <p class="text-gray-700 mb-2"><span class="font-medium">Tax:</span> $<?php echo number_format($quote['tax'], 2); ?></p>
+                                            <?php endif; ?>
+
                                             <?php if (!empty($quote['admin_notes'])): ?>
-                                                <p class="text-gray-700 mb-4"><span class="font-medium">Notes from Admin:</span> <?php echo nl2br(htmlspecialchars($quote['admin_notes'])); ?></p>
+                                                <p class="text-gray-700 mb-4"><span class="font-medium">Notes from our team:</span> <?php echo nl2br(htmlspecialchars($quote['admin_notes'])); ?></p>
                                             <?php endif; ?>
 
                                             <?php if ($quote['status'] === 'quoted'): ?>
