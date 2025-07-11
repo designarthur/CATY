@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Jul 10, 2025 at 06:36 PM
+-- Generation Time: Jul 10, 2025 at 09:13 PM
 -- Server version: 8.0.42-0ubuntu0.22.04.1
 -- PHP Version: 7.4.33
 
@@ -73,17 +73,22 @@ CREATE TABLE `bookings` (
   `total_price` decimal(10,2) NOT NULL,
   `driver_id` int DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `pickup_date` date DEFAULT NULL,
+  `pickup_time` time DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 --
 -- Dumping data for table `bookings`
 --
 
-INSERT INTO `bookings` (`id`, `invoice_id`, `user_id`, `vendor_id`, `booking_number`, `service_type`, `status`, `start_date`, `end_date`, `delivery_location`, `pickup_location`, `delivery_instructions`, `pickup_instructions`, `live_load_requested`, `is_urgent`, `equipment_details`, `junk_details`, `total_price`, `driver_id`, `created_at`, `updated_at`) VALUES
-(1, 4, 29, NULL, 'BK-000004', 'equipment_rental', 'delivered', '2023-10-04', '2023-10-11', 'Dallas, Texas', NULL, 'Place it on the footpath.', NULL, 0, 0, '[{\"quantity\": 1, \"equipment_name\": \"10-yard dumpster\", \"specific_needs\": \"14 days rental\"}]', NULL, 20.00, NULL, '2025-07-10 19:39:45', '2025-07-10 20:03:25'),
-(2, 5, 29, NULL, 'BK-000005', 'equipment_rental', 'delivered', '2023-10-24', '2023-10-31', 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, '[{\"quantity\": null, \"equipment_name\": null, \"specific_needs\": null}]', NULL, 250.00, NULL, '2025-07-10 20:45:59', '2025-07-10 20:47:23'),
-(3, 6, 29, NULL, 'BK-000006', 'equipment_rental', 'delivered', '2023-10-04', '2023-10-11', 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, '[{\"quantity\": null, \"equipment_name\": null, \"specific_needs\": null}]', NULL, 50.00, NULL, '2025-07-10 22:57:55', '2025-07-10 22:59:33');
+INSERT INTO `bookings` (`id`, `invoice_id`, `user_id`, `vendor_id`, `booking_number`, `service_type`, `status`, `start_date`, `end_date`, `delivery_location`, `pickup_location`, `delivery_instructions`, `pickup_instructions`, `live_load_requested`, `is_urgent`, `equipment_details`, `junk_details`, `total_price`, `driver_id`, `created_at`, `updated_at`, `pickup_date`, `pickup_time`) VALUES
+(1, 4, 29, NULL, 'BK-000004', 'equipment_rental', 'delivered', '2023-10-04', '2023-10-11', 'Dallas, Texas', NULL, 'Place it on the footpath.', NULL, 0, 0, '[{\"quantity\": 1, \"equipment_name\": \"10-yard dumpster\", \"specific_needs\": \"14 days rental\"}]', NULL, 20.00, NULL, '2025-07-10 19:39:45', '2025-07-10 20:03:25', NULL, NULL),
+(2, 5, 29, NULL, 'BK-000005', 'equipment_rental', 'delivered', '2023-10-24', '2023-10-31', 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, '[{\"quantity\": null, \"equipment_name\": null, \"specific_needs\": null}]', NULL, 250.00, NULL, '2025-07-10 20:45:59', '2025-07-10 20:47:23', NULL, NULL),
+(3, 6, 29, NULL, 'BK-000006', 'equipment_rental', 'delivered', '2023-10-04', '2023-10-11', 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, '[{\"quantity\": null, \"equipment_name\": null, \"specific_needs\": null}]', NULL, 50.00, NULL, '2025-07-10 22:57:55', '2025-07-10 22:59:33', NULL, NULL),
+(4, 8, 29, NULL, 'BK-000008', 'equipment_rental', 'assigned', '2023-10-05', '2023-11-03', 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, '[{\"quantity\": 2, \"equipment_name\": \"15-yard dumpster\", \"specific_needs\": null}]', NULL, 100.00, NULL, '2025-07-10 23:38:46', '2025-07-11 01:37:06', NULL, NULL),
+(5, 10, 29, NULL, 'BK-000010', 'equipment_rental', 'delivered', '2023-10-04', '2023-10-18', 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, '[{\"quantity\": 2, \"equipment_name\": \"15-yard dumpster\", \"specific_needs\": null}]', NULL, 20.00, NULL, '2025-07-11 00:55:04', '2025-07-11 00:55:58', NULL, NULL),
+(6, 11, 29, NULL, 'BK-000011', 'equipment_rental', 'delivered', '2023-10-14', '2023-11-07', 'Dallas, Texas, 7110', NULL, NULL, NULL, 0, 0, '[{\"quantity\": 2, \"equipment_name\": \"15-yard dumpster\", \"specific_needs\": null}]', NULL, 100.00, NULL, '2025-07-11 01:35:14', '2025-07-11 02:10:32', NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -101,6 +106,40 @@ CREATE TABLE `booking_charges` (
   `created_by_admin_id` int DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `booking_charges`
+--
+
+INSERT INTO `booking_charges` (`id`, `booking_id`, `invoice_id`, `charge_type`, `amount`, `description`, `created_by_admin_id`, `created_at`) VALUES
+(1, 4, 9, 'rental_extension', 150.00, 'Rental extension of 15 days.', 4, '2025-07-11 00:24:05'),
+(2, 6, 12, 'rental_extension', 100.00, 'Rental extension of 5 days.', 4, '2025-07-11 01:39:29'),
+(3, 6, 13, 'rental_extension', 100.00, 'Rental extension of 5 days approved by admin.', 4, '2025-07-11 01:58:13');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `booking_extension_requests`
+--
+
+CREATE TABLE `booking_extension_requests` (
+  `id` int NOT NULL,
+  `booking_id` int NOT NULL,
+  `user_id` int NOT NULL,
+  `requested_days` int NOT NULL,
+  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `invoice_id` int DEFAULT NULL,
+  `admin_notes` text,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `booking_extension_requests`
+--
+
+INSERT INTO `booking_extension_requests` (`id`, `booking_id`, `user_id`, `requested_days`, `status`, `invoice_id`, `admin_notes`, `created_at`, `updated_at`) VALUES
+(1, 6, 29, 5, 'approved', 13, NULL, '2025-07-11 01:38:39', '2025-07-11 01:58:13');
 
 -- --------------------------------------------------------
 
@@ -126,7 +165,20 @@ INSERT INTO `booking_status_history` (`id`, `booking_id`, `status`, `status_time
 (3, 2, 'delivered', '2025-07-10 20:47:23', 'Status updated to Delivered by admin.'),
 (4, 3, 'assigned', '2025-07-10 22:58:45', 'Status updated to Assigned by admin.'),
 (5, 3, 'out_for_delivery', '2025-07-10 22:59:18', 'Status updated to Out For Delivery by admin.'),
-(6, 3, 'delivered', '2025-07-10 22:59:33', 'Status updated to Delivered by admin.');
+(6, 3, 'delivered', '2025-07-10 22:59:33', 'Status updated to Delivered by admin.'),
+(7, 4, 'assigned', '2025-07-11 00:09:16', 'Status updated to Assigned by admin.'),
+(8, 4, 'out_for_delivery', '2025-07-11 00:09:36', 'Status updated to Out For Delivery by admin.'),
+(9, 4, 'delivered', '2025-07-11 00:09:49', 'Status updated to Delivered by admin.'),
+(10, 5, 'assigned', '2025-07-11 00:55:37', 'Status updated to Assigned by admin.'),
+(11, 5, 'out_for_delivery', '2025-07-11 00:55:47', 'Status updated to Out For Delivery by admin.'),
+(12, 5, 'delivered', '2025-07-11 00:55:58', 'Status updated to Delivered by admin.'),
+(13, 4, 'assigned', '2025-07-11 01:36:22', 'Status updated to Assigned by admin.'),
+(14, 4, 'out_for_delivery', '2025-07-11 01:36:28', 'Status updated to Out For Delivery by admin.'),
+(15, 4, 'delivered', '2025-07-11 01:36:33', 'Status updated to Delivered by admin.'),
+(16, 4, 'assigned', '2025-07-11 01:37:06', 'Status updated to Assigned by admin.'),
+(17, 6, 'assigned', '2025-07-11 01:37:54', 'Status updated to Assigned by admin.'),
+(18, 6, 'out_for_delivery', '2025-07-11 01:38:06', 'Status updated to Out For Delivery by admin.'),
+(19, 6, 'delivered', '2025-07-11 01:38:19', 'Status updated to Delivered by admin.');
 
 -- --------------------------------------------------------
 
@@ -188,7 +240,19 @@ INSERT INTO `chat_messages` (`id`, `conversation_id`, `role`, `content`, `create
 (39, 9, 'user', 'residential 12213132133', '2025-07-10 23:29:28'),
 (40, 9, 'assistant', 'Thank you for the details! Here’s a summary of what I have for your quote:\n\n- **Customer Type:** Residential\n- **Customer Name:** Jon Vital\n- **Customer Email:** jjony@test.com\n- **Customer Phone:** 12213132133\n- **Location:** Dallas, Texas 7110\n- **Service Date:** Tomorrow\n- **Service Time:** Morning\n- **Rental Duration:** 14 days\n- **Equipment Details:**\n  - 2 units of 15-yard dumpster\n  - 1 unit of 20-yard dumpster\n  - 2 units of temporary toilets\n- **Is Urgent:** No\n- **Live Load Needed:** No\n\nPlease confirm if everything is correct, and I’ll submit the quote request.', '2025-07-10 23:29:28'),
 (41, 9, 'user', 'yes confirm', '2025-07-10 23:29:40'),
-(42, 9, 'assistant', 'Thank you! Your quote request (#Q35) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-10 23:29:40');
+(42, 9, 'assistant', 'Thank you! Your quote request (#Q35) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-10 23:29:40'),
+(43, 10, 'user', 'i need 2 15 yard dumpster and 1 20 yard dumpster and 2 temporary toilets, for 14 days, tomorrow, can deliver in morning, not a live load, not urgent, location is dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-11 00:53:10'),
+(44, 10, 'assistant', 'To create a service quote, I need to first confirm the customer type. Is this request for Residential or Commercial use?', '2025-07-11 00:53:10'),
+(45, 10, 'user', 'residential', '2025-07-11 00:53:25'),
+(46, 10, 'assistant', 'Thank you for the information! Here’s a summary of what I have so far:\n\n- **Customer Type:** Residential\n- **Customer Name:** Jon Vital\n- **Customer Email:** jjony@test.com\n- **Customer Phone:** 121321312\n- **Location:** Dallas, Texas 7110\n- **Service Date:** Tomorrow\n- **Service Time:** Morning\n- **Is Urgent:** No\n- **Live Load Needed:** No\n- **Equipment Details:**\n  - 2 units of 15-yard dumpster for 14 days\n  - 1 unit of 20-yard dumpster for 14 days\n  - 2 temporary toilets for 14 days\n\nPlease confirm if this information is correct or if there are any additional details you\'d like to add!', '2025-07-11 00:53:25'),
+(47, 10, 'user', 'yes i confrim', '2025-07-11 00:53:38'),
+(48, 10, 'assistant', 'Thank you! Your quote request (#Q36) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-11 00:53:38'),
+(49, 11, 'user', 'i need 2 15 yard dumpster and 1 20 yard dumpster and 2 temporary toilets, for 14 days, tomorrow, can deliver in morning, not a live load, not urgent, location is dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-11 01:33:00'),
+(50, 11, 'assistant', 'Thank you for the information! Could you please confirm if you are a residential or commercial customer? \n\nAdditionally, could you provide your phone number?', '2025-07-11 01:33:00'),
+(51, 11, 'user', 'residential 132131231', '2025-07-11 01:33:17'),
+(52, 11, 'assistant', 'Great! Here\'s a summary of the details I have so far:\n\n- **Customer Type:** Residential\n- **Customer Name:** Jon Vital\n- **Customer Email:** jjony@test.com\n- **Customer Phone:** 132131231\n- **Location:** Dallas, Texas, 7110\n- **Service Date:** Tomorrow\n- **Service Time:** Morning\n- **Urgent:** No\n- **Live Load Needed:** No\n- **Equipment Details:**\n  - 2 x 15-yard dumpsters\n  - 1 x 20-yard dumpster\n  - 2 x Temporary toilets\n- **Duration:** 14 days\n\nPlease confirm if everything is correct, or let me know if there\'s anything else you would like to add!', '2025-07-11 01:33:17'),
+(53, 11, 'user', 'yes confirm', '2025-07-11 01:33:29'),
+(54, 11, 'assistant', 'Thank you! Your quote request (#Q37) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-11 01:33:29');
 
 -- --------------------------------------------------------
 
@@ -216,7 +280,9 @@ INSERT INTO `conversations` (`id`, `user_id`, `initial_service_type`, `created_a
 (6, 29, NULL, '2025-07-10 23:08:04'),
 (7, 29, NULL, '2025-07-10 23:11:54'),
 (8, 29, NULL, '2025-07-10 23:16:40'),
-(9, 29, NULL, '2025-07-10 23:28:58');
+(9, 29, NULL, '2025-07-10 23:28:58'),
+(10, 29, NULL, '2025-07-11 00:53:09'),
+(11, 29, NULL, '2025-07-11 01:32:58');
 
 -- --------------------------------------------------------
 
@@ -269,7 +335,12 @@ INSERT INTO `invoices` (`id`, `quote_id`, `user_id`, `invoice_number`, `amount`,
 (5, 30, 29, 'INV-A9E1D693', 250.00, 'paid', '2025-07-17', NULL, NULL, '2025-07-10 20:45:39', '2025-07-10 20:45:59', NULL, NULL),
 (6, 31, 29, 'INV-99A67877', 50.00, 'paid', '2025-07-17', NULL, NULL, '2025-07-10 22:57:01', '2025-07-10 22:57:55', NULL, NULL),
 (7, NULL, 29, 'INV-SWA-9882c8', 20.00, 'pending', '2025-07-13', NULL, NULL, '2025-07-10 22:59:50', '2025-07-10 22:59:50', 'Invoice for Swap Request on Booking ID 3', 3),
-(8, 35, 29, 'INV-4B55C049', 100.00, 'pending', '2025-07-17', NULL, NULL, '2025-07-10 23:34:46', '2025-07-10 23:34:46', NULL, NULL);
+(8, 35, 29, 'INV-4B55C049', 100.00, 'paid', '2025-07-17', NULL, NULL, '2025-07-10 23:34:46', '2025-07-10 23:38:46', NULL, NULL),
+(9, NULL, 29, 'INV-EXT-0D9384', 150.00, 'pending', '2025-07-18', NULL, NULL, '2025-07-11 00:24:05', '2025-07-11 00:24:05', 'Rental extension of 15 days for Booking #BK-000008', 4),
+(10, 36, 29, 'INV-204FA9CB', 20.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 00:54:56', '2025-07-11 00:55:04', NULL, NULL),
+(11, 37, 29, 'INV-DE744ACF', 100.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 01:34:51', '2025-07-11 01:35:14', NULL, NULL),
+(12, NULL, 29, 'INV-EXT-78E3DF', 100.00, 'pending', '2025-07-18', NULL, NULL, '2025-07-11 01:39:29', '2025-07-11 01:39:29', 'Rental extension of 5 days for Booking #BK-000011', 6),
+(13, NULL, 29, 'INV-EXT-294B52', 100.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 01:58:13', '2025-07-11 02:10:32', 'Rental extension of 5 days for Booking #BK-000011', 6);
 
 -- --------------------------------------------------------
 
@@ -350,7 +421,33 @@ INSERT INTO `notifications` (`id`, `user_id`, `type`, `message`, `link`, `is_rea
 (30, 29, 'booking_status_update', 'Your booking #BK-BK-000006 has been updated to: Delivered.', 'bookings?booking_id=3', 0, '2025-07-10 22:59:33'),
 (31, 29, 'payment_due', 'Your Swap request requires payment. Please pay invoice #INV-SWA-9882c8 to proceed.', 'invoices?invoice_id=7', 0, '2025-07-10 22:59:50'),
 (32, 29, 'new_quote', 'Your quote #35 is ready! The quoted price is $100.00.', 'quotes?quote_id=35', 0, '2025-07-10 23:34:08'),
-(33, 29, 'payment_due', 'Quote #Q35 accepted! Please pay the new invoice to confirm your booking.', 'invoices?invoice_id=8', 0, '2025-07-10 23:34:46');
+(33, 29, 'payment_due', 'Quote #Q35 accepted! Please pay the new invoice to confirm your booking.', 'invoices?invoice_id=8', 0, '2025-07-10 23:34:46'),
+(34, 29, 'booking_confirmed', 'Your booking #BK-000008 has been confirmed!', 'https://catproject.prelaunchdesigns.com/customer/dashboard.php#bookings?booking_id=4', 0, '2025-07-10 23:38:46'),
+(35, 29, 'booking_status_update', 'Your booking #BK-BK-000008 has been updated to: Assigned.', 'bookings?booking_id=4', 0, '2025-07-11 00:09:16'),
+(36, 29, 'booking_status_update', 'Your booking #BK-BK-000008 has been updated to: Out For Delivery.', 'bookings?booking_id=4', 0, '2025-07-11 00:09:36'),
+(37, 29, 'booking_status_update', 'Your booking #BK-BK-000008 has been updated to: Delivered.', 'bookings?booking_id=4', 0, '2025-07-11 00:09:49'),
+(38, 29, 'payment_due', 'Your rental for Booking #BK-000008 has been extended by 15 days. A new invoice has been generated.', 'invoices?invoice_id=9', 1, '2025-07-11 00:24:05'),
+(39, 29, 'new_quote', 'Your quote #36 is ready! The quoted price is $20.00.', 'quotes?quote_id=36', 0, '2025-07-11 00:54:42'),
+(40, 29, 'payment_due', 'Quote #Q36 accepted! Please pay the new invoice to confirm your booking.', 'invoices?invoice_id=10', 0, '2025-07-11 00:54:56'),
+(41, 29, 'booking_confirmed', 'Your booking #BK-000010 has been confirmed!', 'https://catproject.prelaunchdesigns.com/customer/dashboard.php#bookings?booking_id=5', 0, '2025-07-11 00:55:04'),
+(42, 29, 'booking_status_update', 'Your booking #BK-BK-000010 has been updated to: Assigned.', 'bookings?booking_id=5', 0, '2025-07-11 00:55:37'),
+(43, 29, 'booking_status_update', 'Your booking #BK-BK-000010 has been updated to: Out For Delivery.', 'bookings?booking_id=5', 0, '2025-07-11 00:55:47'),
+(44, 29, 'booking_status_update', 'Your booking #BK-BK-000010 has been updated to: Delivered.', 'bookings?booking_id=5', 0, '2025-07-11 00:55:58'),
+(45, 29, 'new_quote', 'Your quote #37 is ready! The quoted price is $100.00.', 'quotes?quote_id=37', 0, '2025-07-11 01:34:26'),
+(46, 29, 'payment_due', 'Quote #Q37 accepted! Please pay the new invoice to confirm your booking.', 'invoices?invoice_id=11', 0, '2025-07-11 01:34:51'),
+(47, 29, 'booking_confirmed', 'Your booking #BK-000011 has been confirmed!', 'https://catproject.prelaunchdesigns.com/customer/dashboard.php#bookings?booking_id=6', 0, '2025-07-11 01:35:14'),
+(48, 29, 'booking_status_update', 'Your booking #BK-BK-000008 has been updated to: Assigned.', 'bookings?booking_id=4', 0, '2025-07-11 01:36:22'),
+(49, 29, 'booking_status_update', 'Your booking #BK-BK-000008 has been updated to: Out For Delivery.', 'bookings?booking_id=4', 0, '2025-07-11 01:36:28'),
+(50, 29, 'booking_status_update', 'Your booking #BK-BK-000008 has been updated to: Delivered.', 'bookings?booking_id=4', 0, '2025-07-11 01:36:33'),
+(51, 29, 'booking_status_update', 'Your booking #BK-BK-000008 has been updated to: Assigned.', 'bookings?booking_id=4', 0, '2025-07-11 01:37:06'),
+(52, 29, 'booking_status_update', 'Your booking #BK-BK-000011 has been updated to: Assigned.', 'bookings?booking_id=6', 0, '2025-07-11 01:37:54'),
+(53, 29, 'booking_status_update', 'Your booking #BK-BK-000011 has been updated to: Out For Delivery.', 'bookings?booking_id=6', 0, '2025-07-11 01:38:06'),
+(54, 29, 'booking_status_update', 'Your booking #BK-BK-000011 has been updated to: Delivered.', 'bookings?booking_id=6', 0, '2025-07-11 01:38:19'),
+(55, 1, 'system_message', 'Customer has requested a 5-day extension for Booking ID #6. Please review and approve.', 'bookings?booking_id=6', 0, '2025-07-11 01:38:39'),
+(56, 29, 'booking_status_update', 'Your request to extend Booking #6 by 5 days has been submitted for approval.', 'bookings?booking_id=6', 0, '2025-07-11 01:38:39'),
+(57, 29, 'payment_due', 'Your rental for Booking #BK-000011 has been extended by 5 days. A new invoice has been generated.', 'invoices?invoice_id=12', 0, '2025-07-11 01:39:29'),
+(58, 29, 'payment_due', 'Your rental extension request for Booking #BK-000011 has been approved! Please pay the new invoice to confirm.', 'bookings?booking_id=6', 0, '2025-07-11 01:58:13'),
+(59, 29, 'payment_received', 'The status of your invoice #INV-EXT-294B52 has been updated to: Paid', 'invoices?invoice_id=13', 0, '2025-07-11 02:10:32');
 
 -- --------------------------------------------------------
 
@@ -373,6 +470,7 @@ CREATE TABLE `quotes` (
   `is_urgent` tinyint(1) DEFAULT '0',
   `driver_instructions` text,
   `quoted_price` decimal(10,2) DEFAULT NULL,
+  `daily_rate` decimal(10,2) DEFAULT NULL,
   `swap_charge` decimal(10,2) DEFAULT '0.00',
   `relocation_charge` decimal(10,2) DEFAULT '0.00',
   `quote_details` json DEFAULT NULL,
@@ -387,17 +485,19 @@ CREATE TABLE `quotes` (
 -- Dumping data for table `quotes`
 --
 
-INSERT INTO `quotes` (`id`, `user_id`, `service_type`, `status`, `customer_type`, `location`, `delivery_date`, `delivery_time`, `removal_date`, `removal_time`, `live_load_needed`, `is_urgent`, `driver_instructions`, `quoted_price`, `swap_charge`, `relocation_charge`, `quote_details`, `admin_notes`, `created_at`, `updated_at`, `is_swap_included`, `is_relocation_included`) VALUES
-(10, 1, 'equipment_rental', 'quoted', NULL, 'Test City', NULL, NULL, NULL, NULL, 0, 0, NULL, 50.00, 50.00, 0.00, '{\"test_data\": \"This is a test.\"}', '', '2025-07-09 23:25:16', '2025-07-10 22:50:50', 0, 0),
-(24, 29, 'equipment_rental', 'quoted', 'Residential', 'Dallas, Texas (7110)', '2023-10-11', 'Morning', NULL, NULL, 0, 0, '', 250.00, 20.00, 36.00, '{\"name\": \"Jon Vital\", \"type\": \"equipmentRental\", \"email\": \"jjony@test.com\", \"location\": \"Dallas, Texas (7110)\", \"is_urgent\": false, \"phoneNumber\": \"121321312\", \"customer_type\": \"Residential\", \"delivery_date\": \"2023-10-11\", \"delivery_time\": \"Morning\", \"specific_needs\": \"14 days rental\", \"equipment_types\": [\"20-yard dumpster\"], \"customer_message\": \"Thank you for your order, Jon Vital! We have noted down your details. You will receive your personalized quote within a maximum of 1 hour as we search for the best price in your area. Your account has been created, and you will be able to view your quote in your account dashboard as soon as it\'s ready. If you have any further questions or need assistance, feel free to ask.\", \"live_load_needed\": false, \"driver_instructions\": \"\"}', 'this includes pickup as well', '2025-07-10 00:51:45', '2025-07-10 20:25:39', 0, 0),
-(25, 29, 'equipment_rental', 'accepted', 'Residential', 'Dallas, Texas', '2023-10-04', 'Morning', NULL, NULL, 0, 0, '', 50.00, 0.00, 0.00, '{\"name\": \"Jon Vital\", \"type\": \"equipmentRental\", \"email\": \"jjony@test.com\", \"location\": \"Dallas, Texas\", \"is_urgent\": false, \"phoneNumber\": \"121321312\", \"customer_type\": \"Residential\", \"delivery_date\": \"2023-10-04\", \"delivery_time\": \"Morning\", \"specific_needs\": \"14 days rental\", \"equipment_types\": [\"15-yard dumpster\"], \"customer_message\": \"Thank you for your order, Jon! We have noted down your details. You will receive your personalized quote within a maximum of 1 hour as we search for the best price in your area. Your account has been created, and you will be able to view your quote in your account dashboard as soon as it\'s ready. If you have any further questions or need assistance, feel free to ask.\", \"live_load_needed\": false, \"driver_instructions\": \"\"}', 'this include 2 week service', '2025-07-10 01:32:36', '2025-07-10 03:33:26', 0, 0),
-(26, 29, 'equipment_rental', 'converted_to_booking', 'Residential', 'Dallas, Texas', '2023-10-04', 'Morning', NULL, NULL, 0, 0, 'Place it on the footpath.', 20.00, 0.00, 0.00, '{\"name\": \"Jon Vital\", \"type\": \"equipmentRental\", \"email\": \"jjony@test.com\", \"location\": \"Dallas, Texas\", \"is_urgent\": false, \"phoneNumber\": \"121321312\", \"customer_type\": \"Residential\", \"delivery_date\": \"2023-10-04\", \"delivery_time\": \"Morning\", \"specific_needs\": \"14 days rental\", \"equipment_types\": [\"10-yard dumpster\"], \"customer_message\": \"Thank you for your order, Jon! We have noted down your details. You will receive your personalized quote within a maximum of 1 hour as we search for the best price in your area. Your account has been created, and you will be able to view your quote in your account dashboard as soon as it\'s ready. If you have any further questions or need assistance, feel free to ask.\", \"live_load_needed\": false, \"driver_instructions\": \"Place it on the footpath.\"}', 'this includes weekly servicing', '2025-07-10 18:55:49', '2025-07-10 19:39:45', 0, 0),
-(30, 29, 'equipment_rental', 'converted_to_booking', NULL, 'Dallas, Texas 7110', '2023-10-24', '09:00', NULL, NULL, 0, 0, NULL, 250.00, 10.00, 28.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-24\", \"service_time\": \"09:00\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false}', 'this includes weekly service', '2025-07-10 20:39:25', '2025-07-10 20:45:59', 0, 0),
-(31, 29, 'equipment_rental', 'converted_to_booking', NULL, 'Dallas, Texas 7110', '2023-10-04', 'morning', NULL, NULL, 0, 0, NULL, 50.00, 20.00, 0.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-04\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false}', '', '2025-07-10 22:52:28', '2025-07-10 22:57:55', 0, 0),
-(32, 29, 'equipment_rental', 'pending', NULL, 'dallas texas 7110', '2023-10-11', '10:00', NULL, NULL, 0, 0, 'just drop it on footpath', NULL, 0.00, 0.00, '{\"location\": \"dallas texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-11\", \"service_time\": \"10:00\", \"service_type\": \"equipment_rental\", \"customer_name\": \"jon vital\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"05544888554\", \"live_load_needed\": false, \"equipment_details\": {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, \"driver_instructions\": \"just drop it on footpath\"}', NULL, '2025-07-10 23:09:04', '2025-07-10 23:09:04', 0, 0),
-(33, 29, 'equipment_rental', 'pending', 'Residential', 'Dallas, Texas 7110', '2023-10-04', 'Morning', NULL, NULL, 0, 0, NULL, NULL, 0.00, 0.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-04\", \"service_time\": \"Morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}}', NULL, '2025-07-10 23:12:46', '2025-07-10 23:12:46', 0, 0),
-(34, 29, 'equipment_rental', 'pending', 'Residential', 'Dallas, Texas 7110', '2023-10-14', 'morning', NULL, NULL, 0, 0, NULL, NULL, 0.00, 0.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-14\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}}', NULL, '2025-07-10 23:17:09', '2025-07-10 23:17:09', 0, 0),
-(35, 29, 'equipment_rental', 'accepted', 'Residential', 'Dallas, Texas 7110', '2023-10-05', 'morning', NULL, NULL, 0, 0, NULL, 100.00, 20.00, 35.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-05\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"12213132133\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}]}', '', '2025-07-10 23:29:40', '2025-07-10 23:34:46', 0, 0);
+INSERT INTO `quotes` (`id`, `user_id`, `service_type`, `status`, `customer_type`, `location`, `delivery_date`, `delivery_time`, `removal_date`, `removal_time`, `live_load_needed`, `is_urgent`, `driver_instructions`, `quoted_price`, `daily_rate`, `swap_charge`, `relocation_charge`, `quote_details`, `admin_notes`, `created_at`, `updated_at`, `is_swap_included`, `is_relocation_included`) VALUES
+(10, 1, 'equipment_rental', 'quoted', NULL, 'Test City', NULL, NULL, NULL, NULL, 0, 0, NULL, 50.00, NULL, 50.00, 0.00, '{\"test_data\": \"This is a test.\"}', '', '2025-07-09 23:25:16', '2025-07-10 22:50:50', 0, 0),
+(24, 29, 'equipment_rental', 'quoted', 'Residential', 'Dallas, Texas (7110)', '2023-10-11', 'Morning', NULL, NULL, 0, 0, '', 250.00, NULL, 20.00, 36.00, '{\"name\": \"Jon Vital\", \"type\": \"equipmentRental\", \"email\": \"jjony@test.com\", \"location\": \"Dallas, Texas (7110)\", \"is_urgent\": false, \"phoneNumber\": \"121321312\", \"customer_type\": \"Residential\", \"delivery_date\": \"2023-10-11\", \"delivery_time\": \"Morning\", \"specific_needs\": \"14 days rental\", \"equipment_types\": [\"20-yard dumpster\"], \"customer_message\": \"Thank you for your order, Jon Vital! We have noted down your details. You will receive your personalized quote within a maximum of 1 hour as we search for the best price in your area. Your account has been created, and you will be able to view your quote in your account dashboard as soon as it\'s ready. If you have any further questions or need assistance, feel free to ask.\", \"live_load_needed\": false, \"driver_instructions\": \"\"}', 'this includes pickup as well', '2025-07-10 00:51:45', '2025-07-10 20:25:39', 0, 0),
+(25, 29, 'equipment_rental', 'accepted', 'Residential', 'Dallas, Texas', '2023-10-04', 'Morning', NULL, NULL, 0, 0, '', 50.00, NULL, 0.00, 0.00, '{\"name\": \"Jon Vital\", \"type\": \"equipmentRental\", \"email\": \"jjony@test.com\", \"location\": \"Dallas, Texas\", \"is_urgent\": false, \"phoneNumber\": \"121321312\", \"customer_type\": \"Residential\", \"delivery_date\": \"2023-10-04\", \"delivery_time\": \"Morning\", \"specific_needs\": \"14 days rental\", \"equipment_types\": [\"15-yard dumpster\"], \"customer_message\": \"Thank you for your order, Jon! We have noted down your details. You will receive your personalized quote within a maximum of 1 hour as we search for the best price in your area. Your account has been created, and you will be able to view your quote in your account dashboard as soon as it\'s ready. If you have any further questions or need assistance, feel free to ask.\", \"live_load_needed\": false, \"driver_instructions\": \"\"}', 'this include 2 week service', '2025-07-10 01:32:36', '2025-07-10 03:33:26', 0, 0),
+(26, 29, 'equipment_rental', 'converted_to_booking', 'Residential', 'Dallas, Texas', '2023-10-04', 'Morning', NULL, NULL, 0, 0, 'Place it on the footpath.', 20.00, NULL, 0.00, 0.00, '{\"name\": \"Jon Vital\", \"type\": \"equipmentRental\", \"email\": \"jjony@test.com\", \"location\": \"Dallas, Texas\", \"is_urgent\": false, \"phoneNumber\": \"121321312\", \"customer_type\": \"Residential\", \"delivery_date\": \"2023-10-04\", \"delivery_time\": \"Morning\", \"specific_needs\": \"14 days rental\", \"equipment_types\": [\"10-yard dumpster\"], \"customer_message\": \"Thank you for your order, Jon! We have noted down your details. You will receive your personalized quote within a maximum of 1 hour as we search for the best price in your area. Your account has been created, and you will be able to view your quote in your account dashboard as soon as it\'s ready. If you have any further questions or need assistance, feel free to ask.\", \"live_load_needed\": false, \"driver_instructions\": \"Place it on the footpath.\"}', 'this includes weekly servicing', '2025-07-10 18:55:49', '2025-07-10 19:39:45', 0, 0),
+(30, 29, 'equipment_rental', 'converted_to_booking', NULL, 'Dallas, Texas 7110', '2023-10-24', '09:00', NULL, NULL, 0, 0, NULL, 250.00, NULL, 10.00, 28.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-24\", \"service_time\": \"09:00\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false}', 'this includes weekly service', '2025-07-10 20:39:25', '2025-07-10 20:45:59', 0, 0),
+(31, 29, 'equipment_rental', 'converted_to_booking', NULL, 'Dallas, Texas 7110', '2023-10-04', 'morning', NULL, NULL, 0, 0, NULL, 50.00, NULL, 20.00, 0.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-04\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false}', '', '2025-07-10 22:52:28', '2025-07-10 22:57:55', 0, 0),
+(32, 29, 'equipment_rental', 'pending', NULL, 'dallas texas 7110', '2023-10-11', '10:00', NULL, NULL, 0, 0, 'just drop it on footpath', NULL, NULL, 0.00, 0.00, '{\"location\": \"dallas texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-11\", \"service_time\": \"10:00\", \"service_type\": \"equipment_rental\", \"customer_name\": \"jon vital\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"05544888554\", \"live_load_needed\": false, \"equipment_details\": {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, \"driver_instructions\": \"just drop it on footpath\"}', NULL, '2025-07-10 23:09:04', '2025-07-10 23:09:04', 0, 0),
+(33, 29, 'equipment_rental', 'pending', 'Residential', 'Dallas, Texas 7110', '2023-10-04', 'Morning', NULL, NULL, 0, 0, NULL, NULL, NULL, 0.00, 0.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-04\", \"service_time\": \"Morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}}', NULL, '2025-07-10 23:12:46', '2025-07-10 23:12:46', 0, 0),
+(34, 29, 'equipment_rental', 'pending', 'Residential', 'Dallas, Texas 7110', '2023-10-14', 'morning', NULL, NULL, 0, 0, NULL, NULL, NULL, 0.00, 0.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-14\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}}', NULL, '2025-07-10 23:17:09', '2025-07-10 23:17:09', 0, 0),
+(35, 29, 'equipment_rental', 'converted_to_booking', 'Residential', 'Dallas, Texas 7110', '2023-10-05', 'morning', NULL, NULL, 0, 0, NULL, 100.00, NULL, 20.00, 35.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-05\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"12213132133\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}]}', '', '2025-07-10 23:29:40', '2025-07-10 23:38:46', 0, 0),
+(36, 29, 'equipment_rental', 'converted_to_booking', 'Residential', 'Dallas, Texas 7110', '2023-10-04', 'Morning', NULL, NULL, 0, 0, NULL, 20.00, NULL, 10.00, 10.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-04\", \"service_time\": \"Morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}]}', '', '2025-07-11 00:53:38', '2025-07-11 00:55:04', 0, 0),
+(37, 29, 'equipment_rental', 'converted_to_booking', 'Residential', 'Dallas, Texas, 7110', '2023-10-14', 'Morning', NULL, NULL, 0, 0, NULL, 100.00, 20.00, 30.00, 50.00, '{\"location\": \"Dallas, Texas, 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-14\", \"service_time\": \"Morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"132131231\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"Temporary toilet\"}]}', '', '2025-07-11 01:33:29', '2025-07-11 01:35:14', 0, 0);
 
 -- --------------------------------------------------------
 
@@ -422,7 +522,13 @@ CREATE TABLE `quote_equipment_details` (
 INSERT INTO `quote_equipment_details` (`id`, `quote_id`, `equipment_id`, `equipment_name`, `quantity`, `duration_days`, `specific_needs`) VALUES
 (1, 35, NULL, '15-yard dumpster', 2, 14, NULL),
 (2, 35, NULL, '20-yard dumpster', 1, 14, NULL),
-(3, 35, NULL, 'temporary toilet', 2, 14, NULL);
+(3, 35, NULL, 'temporary toilet', 2, 14, NULL),
+(4, 36, NULL, '15-yard dumpster', 2, 14, NULL),
+(5, 36, NULL, '20-yard dumpster', 1, 14, NULL),
+(6, 36, NULL, 'temporary toilet', 2, 14, NULL),
+(7, 37, NULL, '15-yard dumpster', 2, 14, NULL),
+(8, 37, NULL, '20-yard dumpster', 1, 14, NULL),
+(9, 37, NULL, 'Temporary toilet', 2, 14, NULL);
 
 -- --------------------------------------------------------
 
@@ -583,6 +689,15 @@ ALTER TABLE `booking_charges`
   ADD KEY `invoice_id` (`invoice_id`);
 
 --
+-- Indexes for table `booking_extension_requests`
+--
+ALTER TABLE `booking_extension_requests`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_booking_id` (`booking_id`),
+  ADD KEY `fk_extension_requests_user_id` (`user_id`),
+  ADD KEY `idx_invoice_id` (`invoice_id`);
+
+--
 -- Indexes for table `booking_status_history`
 --
 ALTER TABLE `booking_status_history`
@@ -709,31 +824,37 @@ ALTER TABLE `api_keys`
 -- AUTO_INCREMENT for table `bookings`
 --
 ALTER TABLE `bookings`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `booking_charges`
 --
 ALTER TABLE `booking_charges`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `booking_extension_requests`
+--
+ALTER TABLE `booking_extension_requests`
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `booking_status_history`
 --
 ALTER TABLE `booking_status_history`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT for table `chat_messages`
 --
 ALTER TABLE `chat_messages`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=43;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=55;
 
 --
 -- AUTO_INCREMENT for table `conversations`
 --
 ALTER TABLE `conversations`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `equipment`
@@ -745,7 +866,7 @@ ALTER TABLE `equipment`
 -- AUTO_INCREMENT for table `invoices`
 --
 ALTER TABLE `invoices`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- AUTO_INCREMENT for table `junk_removal_details`
@@ -763,19 +884,19 @@ ALTER TABLE `junk_removal_media`
 -- AUTO_INCREMENT for table `notifications`
 --
 ALTER TABLE `notifications`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=34;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=60;
 
 --
 -- AUTO_INCREMENT for table `quotes`
 --
 ALTER TABLE `quotes`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=36;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=38;
 
 --
 -- AUTO_INCREMENT for table `quote_equipment_details`
 --
 ALTER TABLE `quote_equipment_details`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `reviews`
@@ -825,6 +946,13 @@ ALTER TABLE `bookings`
 ALTER TABLE `booking_charges`
   ADD CONSTRAINT `fk_booking_charges_booking` FOREIGN KEY (`booking_id`) REFERENCES `bookings` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_booking_charges_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `booking_extension_requests`
+--
+ALTER TABLE `booking_extension_requests`
+  ADD CONSTRAINT `fk_extension_requests_booking_id` FOREIGN KEY (`booking_id`) REFERENCES `bookings` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_extension_requests_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `booking_status_history`
