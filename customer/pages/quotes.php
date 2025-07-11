@@ -195,9 +195,14 @@ function getCustomerStatusBadgeClass($status) {
                                     <?php endif; ?>
 
                                     <?php if ($quote['status'] === 'quoted' || $quote['status'] === 'accepted' || $quote['status'] === 'converted_to_booking'): ?>
+                                        <?php
+                                            // Calculate the final price for display and action
+                                            $final_quoted_price = ($quote['quoted_price'] ?? 0) - ($quote['discount'] ?? 0) + ($quote['tax'] ?? 0);
+                                            $final_quoted_price = max(0, $final_quoted_price); // Ensure it's not negative
+                                        ?>
                                         <div class="mt-6 pt-4 border-t border-gray-200">
                                             <h4 class="text-lg font-bold text-gray-800 mb-2">Our Quotation:</h4>
-                                            <p class="text-gray-700 mb-2"><span class="font-medium">Quoted Price:</span> <span class="text-green-600 text-xl font-bold">$<?php echo number_format($quote['quoted_price'], 2); ?></span></p>
+                                            <p class="text-gray-700 mb-2"><span class="font-medium">Base Quoted Price:</span> <span class="text-gray-600 text-lg">$<?php echo number_format($quote['quoted_price'] ?? 0, 2); ?></span></p>
                                             
                                             <?php if (!empty($quote['daily_rate']) && $quote['daily_rate'] > 0): ?>
                                                 <p class="text-gray-700 mb-2"><span class="font-medium">Daily Rate (for extensions):</span> $<?php echo number_format($quote['daily_rate'], 2); ?></p>
@@ -223,9 +228,11 @@ function getCustomerStatusBadgeClass($status) {
                                                 <p class="text-gray-700 mb-4"><span class="font-medium">Notes from our team:</span> <?php echo nl2br(htmlspecialchars($quote['admin_notes'])); ?></p>
                                             <?php endif; ?>
 
+                                            <p class="text-gray-700 mb-2 mt-4 text-right"><span class="font-bold text-xl">Final Total:</span> <span class="text-green-600 text-2xl font-bold">$<?php echo number_format($final_quoted_price, 2); ?></span></p>
+
                                             <?php if ($quote['status'] === 'quoted'): ?>
                                                 <div class="flex space-x-3 mt-4">
-                                                    <button class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 accept-quote-btn" data-id="<?php echo htmlspecialchars($quote['id']); ?>" data-price="<?php echo htmlspecialchars($quote['quoted_price']); ?>">
+                                                    <button class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 accept-quote-btn" data-id="<?php echo htmlspecialchars($quote['id']); ?>" data-price="<?php echo htmlspecialchars($final_quoted_price); ?>">
                                                         <i class="fas fa-check-circle mr-2"></i>Accept Quote
                                                     </button>
                                                     <button class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 reject-quote-btn" data-id="<?php echo htmlspecialchars($quote['id']); ?>">
@@ -303,7 +310,9 @@ function getCustomerStatusBadgeClass($status) {
                 const quoteId = this.dataset.id;
                 const action = isAccept ? 'accept_quote' : 'reject_quote';
                 const title = isAccept ? 'Accept Quote' : 'Reject Quote';
-                const message = isAccept ? `Are you sure you want to accept this quote for $${parseFloat(this.dataset.price).toFixed(2)}? This will proceed to payment.` : 'Are you sure you want to reject this quote? This action cannot be undone.';
+                // Pass the data-price which now holds the final calculated total
+                const price_display = this.dataset.price;
+                const message = isAccept ? `Are you sure you want to accept this quote for $${price_display}? This will proceed to payment.` : 'Are you sure you want to reject this quote? This action cannot be undone.';
                 const confirmColor = isAccept ? 'bg-green-600' : 'bg-red-600';
 
                 window.showConfirmationModal(title, message, async (confirmed) => {
@@ -313,6 +322,10 @@ function getCustomerStatusBadgeClass($status) {
                         formData.append('action', action);
                         formData.append('quote_id', quoteId);
                         formData.append('csrf_token', csrfToken);
+                        // If accepting, also send the actual final price for backend validation/use if needed
+                        if (isAccept) {
+                             formData.append('final_price', price_display);
+                        }
 
                         try {
                             const response = await fetch('/api/customer/quotes.php', { method: 'POST', body: formData });

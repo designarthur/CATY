@@ -46,7 +46,8 @@ if (empty($action) || !$quote_id) {
 // --- Main Logic ---
 try {
     // First, verify the quote belongs to the user and is in a valid state for the action.
-    $stmt_verify = $conn->prepare("SELECT status, quoted_price, service_type, daily_rate, swap_charge, relocation_charge, discount, tax FROM quotes WHERE id = ? AND user_id = ?");
+    // Fetch all relevant pricing details from the quote
+    $stmt_verify = $conn->prepare("SELECT status, quoted_price, service_type, daily_rate, swap_charge, relocation_charge, discount, tax, is_swap_included, is_relocation_included FROM quotes WHERE id = ? AND user_id = ?");
     $stmt_verify->bind_param("ii", $quote_id, $user_id);
     $stmt_verify->execute();
     $quote = $stmt_verify->get_result()->fetch_assoc();
@@ -112,11 +113,12 @@ function handleAcceptQuote($conn, $quote_id, $user_id, $quote_data) {
         }
         $stmt_update->close();
 
-        // Calculate final amount including discount and tax
-        $final_amount = ($quote_data['quoted_price'] ?? 0) - ($quote_data['discount'] ?? 0) + ($quote_data['tax'] ?? 0);
-        $final_amount = max(0, $final_amount); // Ensure amount is not negative
+        // Calculate final amount for the initial invoice: base quoted_price - discount + tax
+        // IMPORTANT: Relocation and Swap charges are NOT included here unless explicitly part of the base quote.
+        $initial_invoice_amount = (float)($quote_data['quoted_price'] ?? 0) - (float)($quote_data['discount'] ?? 0) + (float)($quote_data['tax'] ?? 0);
+        $initial_invoice_amount = max(0, $initial_invoice_amount); // Ensure amount is not negative
 
-        // 2. Create a new Invoice
+        // 2. Create a new Invoice for the initial service
         $invoice_number = 'INV-' . strtoupper(generateToken(8));
         
         // Calculate due_date
@@ -125,27 +127,36 @@ function handleAcceptQuote($conn, $quote_id, $user_id, $quote_data) {
             error_log("Failed to generate timestamp for due_date in handleAcceptQuote.");
             throw new Exception('Failed to generate a valid timestamp for the due date.');
         }
-        $due_date = date('Y-m-d', $seven_days_later_timestamp);
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $due_date)) {
-            error_log("Invalid due_date format: " . $due_date);
+        $due_date_str = date('Y-m-d', $seven_days_later_timestamp); // Ensure it's a string variable
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $due_date_str)) { // Use the string variable for validation
+            error_log("Invalid due_date format: " . $due_date_str);
             throw new Exception('Generated due date is not in valid YYYY-MM-DD format.');
         }
 
-        // Log for debugging
-        error_log("[DEBUG] Current time: " . date('Y-m-d H:i:s'));
-        error_log("[DEBUG] strtotime('+7 days') result: " . ($seven_days_later_timestamp === false ? 'false' : $seven_days_later_timestamp));
-        error_log("[DEBUG] Generated due_date: " . $due_date);
-
         $stmt_invoice = $conn->prepare("INSERT INTO invoices (quote_id, user_id, invoice_number, amount, status, due_date, discount, tax) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)");
-        $stmt_invoice->bind_param("iisdsdd", $quote_id, $user_id, $invoice_number, $final_amount, $due_date, $quote_data['discount'], $quote_data['tax']);
+        // Pass variables by reference directly
+        $stmt_invoice->bind_param("iisdsdd", $quote_id, $user_id, $invoice_number, $initial_invoice_amount, $due_date_str, $quote_data['discount'], $quote_data['tax']);
         if (!$stmt_invoice->execute()) {
-            error_log('Failed to create invoice: ' . $stmt_invoice->error . ' with due_date: ' . $due_date);
+            error_log('Failed to create invoice: ' . $stmt_invoice->error . ' with due_date: ' . $due_date_str);
             throw new Exception('Failed to create invoice: ' . $stmt_invoice->error);
         }
         $invoice_id = $conn->insert_id;
         $stmt_invoice->close();
 
         // 3. Populate Invoice Items based on service type
+        $stmt_insert_item = $conn->prepare("INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?)");
+        
+        // Add the main service as a line item
+        $description = ucwords(str_replace('_', ' ', $quote_data['service_type'])) . " (Quote #{$quote_id})";
+        $quantity = 1;
+        $unit_price = (float)($quote_data['quoted_price'] ?? 0); // Ensure float
+        $total = $unit_price;
+        $stmt_insert_item->bind_param("isidd", $invoice_id, $description, $quantity, $unit_price, $total);
+        if (!$stmt_insert_item->execute()) {
+            throw new Exception('Failed to insert main service item into invoice_items: ' . $stmt_insert_item->error);
+        }
+
+        // Add specific details for equipment rental if applicable
         if ($quote_data['service_type'] === 'equipment_rental') {
             $stmt_eq_details = $conn->prepare("SELECT equipment_name, quantity, duration_days, specific_needs FROM quote_equipment_details WHERE quote_id = ?");
             $stmt_eq_details->bind_param("i", $quote_id);
@@ -153,90 +164,60 @@ function handleAcceptQuote($conn, $quote_id, $user_id, $quote_data) {
             $eq_details = $stmt_eq_details->get_result();
             $stmt_eq_details->close();
 
-            $stmt_insert_item = $conn->prepare("INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?)");
-            
-            // Add a single line item for the base quoted price
-            $description = "Equipment Rental (Quote #{$quote_id})";
-            $quantity = 1;
-            $unit_price = $quote_data['quoted_price'];
-            $total = $quote_data['quoted_price'];
-            $stmt_insert_item->bind_param("isidd", $invoice_id, $description, $quantity, $unit_price, $total);
-            if (!$stmt_insert_item->execute()) {
-                throw new Exception('Failed to insert base rental item into invoice_items: ' . $stmt_insert_item->error);
-            }
-
-            // Add Daily Rate as a separate line item if applicable and not zero
-            if (($quote_data['daily_rate'] ?? 0) > 0) {
-                $description = "Daily Rate for Extensions";
-                $quantity = 1; 
-                $unit_price = $quote_data['daily_rate'];
-                $total = $quote_data['daily_rate'];
-                $stmt_insert_item->bind_param("isidd", $invoice_id, $description, $quantity, $unit_price, $total);
+            while($item = $eq_details->fetch_assoc()){
+                $item_desc = " - " . htmlspecialchars($item['equipment_name']);
+                if (!empty($item['duration_days'])) {
+                    $item_desc .= " ({$item['duration_days']} days)";
+                }
+                if (!empty($item['specific_needs'])) {
+                    $item_desc .= " - " . htmlspecialchars($item['specific_needs']);
+                }
+                // These are descriptive items, not individually priced on the invoice
+                $zero_price = 0; // Use a variable for literal zero
+                $stmt_insert_item->bind_param("isidd", $invoice_id, $item_desc, $item['quantity'], $zero_price, $zero_price);
                 if (!$stmt_insert_item->execute()) {
-                    error_log('Failed to insert daily rate item: ' . $stmt_insert_item->error);
+                    error_log('Failed to insert detailed equipment item: ' . $stmt_insert_item->error);
                 }
             }
-
-            // Add Relocation Charge as a separate line item if applicable and not zero
-            if (($quote_data['relocation_charge'] ?? 0) > 0) {
-                $description = "Relocation Service Charge";
-                $quantity = 1;
-                $unit_price = $quote_data['relocation_charge'];
-                $total = $quote_data['relocation_charge'];
-                $stmt_insert_item->bind_param("isidd", $invoice_id, $description, $quantity, $unit_price, $total);
-                if (!$stmt_insert_item->execute()) {
-                    error_log('Failed to insert relocation charge item: ' . $stmt_insert_item->error);
-                }
-            }
-
-            // Add Swap Charge as a separate line item if applicable and not zero
-            if (($quote_data['swap_charge'] ?? 0) > 0) {
-                $description = "Equipment Swap Service Charge";
-                $quantity = 1;
-                $unit_price = $quote_data['swap_charge'];
-                $total = $quote_data['swap_charge'];
-                $stmt_insert_item->bind_param("isidd", $invoice_id, $description, $quantity, $unit_price, $total);
-                if (!$stmt_insert_item->execute()) {
-                    error_log('Failed to insert swap charge item: ' . $stmt_insert_item->error);
-                }
-            }
-            $stmt_insert_item->close();
-
         } elseif ($quote_data['service_type'] === 'junk_removal') {
-            $stmt_junk_details = $conn->prepare("SELECT junk_items_json, additional_comment FROM junk_removal_details WHERE quote_id = ?");
+            $stmt_junk_details = $conn->prepare("SELECT junk_items_json, recommended_dumpster_size, additional_comment FROM junk_removal_details WHERE quote_id = ?");
             $stmt_junk_details->bind_param("i", $quote_id);
             $stmt_junk_details->execute();
             $junk_details = $stmt_junk_details->get_result()->fetch_assoc();
             $stmt_junk_details->close();
 
-            $stmt_insert_item = $conn->prepare("INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?)");
-
-            // Main junk removal service item
-            $description = "Junk Removal Service (Quote #{$quote_id})";
-            $quantity = 1;
-            $unit_price = $quote_data['quoted_price'];
-            $total = $quote_data['quoted_price'];
-            $stmt_insert_item->bind_param("isidd", $invoice_id, $description, $quantity, $unit_price, $total);
-            if (!$stmt_insert_item->execute()) {
-                throw new Exception('Failed to insert junk removal item into invoice_items: ' . $stmt_insert_item->error);
-            }
-
-            // Add detailed junk items as separate lines if available
             if (!empty($junk_details['junk_items_json'])) {
                 $parsed_junk_items = json_decode($junk_details['junk_items_json'], true);
                 foreach ($parsed_junk_items as $item) {
                     $item_desc = " - " . ($item['itemType'] ?? 'Unknown Item');
                     $item_qty = $item['quantity'] ?? 1;
-                    $item_unit_price = 0; // Descriptive items, not priced individually
-                    $item_total = 0;
-                    $stmt_insert_item->bind_param("isidd", $invoice_id, $item_desc, $item_qty, $item_unit_price, $item_total);
+                    // These are descriptive items, not priced individually
+                    $zero_price = 0; // Use a variable for literal zero
+                    $stmt_insert_item->bind_param("isidd", $invoice_id, $item_desc, $item_qty, $zero_price, $zero_price);
                     if (!$stmt_insert_item->execute()) {
                         error_log('Failed to insert detailed junk item: ' . $stmt_insert_item->error);
                     }
                 }
             }
-            $stmt_insert_item->close();
+            if (!empty($junk_details['recommended_dumpster_size'])) {
+                $item_desc = " - Recommended Dumpster Size: " . $junk_details['recommended_dumpster_size'];
+                $zero_price = 0; // Use a variable for literal zero
+                $stmt_insert_item->bind_param("isidd", $invoice_id, $item_desc, 1, $zero_price, $zero_price);
+                if (!$stmt_insert_item->execute()) {
+                    error_log('Failed to insert recommended dumpster size item: ' . $stmt_insert_item->error);
+                }
+            }
+            if (!empty($junk_details['additional_comment'])) {
+                $item_desc = " - Additional Comments: " . $junk_details['additional_comment'];
+                $zero_price = 0; // Use a variable for literal zero
+                $stmt_insert_item->bind_param("isidd", $invoice_id, $item_desc, 1, $zero_price, $zero_price);
+                if (!$stmt_insert_item->execute()) {
+                    error_log('Failed to insert additional comment item: ' . $stmt_insert_item->error);
+                }
+            }
         }
+        $stmt_insert_item->close();
+
 
         // 4. Create Notification for the customer to pay the new invoice
         $notification_message = "Quote #Q{$quote_id} accepted! Please pay the new invoice to confirm your booking.";
@@ -300,4 +281,3 @@ function handleRejectQuote($conn, $quote_id, $user_id) {
         throw $e; // Re-throw to be caught by the main try-catch block
     }
 }
-?>

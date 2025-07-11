@@ -66,6 +66,13 @@ function handleSubmitQuote($conn) {
     // --- Input Validation ---
     $quoteId = filter_input(INPUT_POST, 'quote_id', FILTER_VALIDATE_INT);
     $quotedPrice = filter_input(INPUT_POST, 'quoted_price', FILTER_VALIDATE_FLOAT);
+    $dailyRate = filter_input(INPUT_POST, 'daily_rate', FILTER_VALIDATE_FLOAT); 
+    $relocationCharge = filter_input(INPUT_POST, 'relocation_charge', FILTER_VALIDATE_FLOAT); 
+    // Correctly get boolean from checkbox '1' or '0'
+    $isRelocationIncluded = filter_input(INPUT_POST, 'is_relocation_included', FILTER_VALIDATE_INT) === 1; 
+    $swapCharge = filter_input(INPUT_POST, 'swap_charge', FILTER_VALIDATE_FLOAT); 
+    // Correctly get boolean from checkbox '1' or '0'
+    $isSwapIncluded = filter_input(INPUT_POST, 'is_swap_included', FILTER_VALIDATE_INT) === 1; 
     $discount = filter_input(INPUT_POST, 'discount', FILTER_VALIDATE_FLOAT);
     $tax = filter_input(INPUT_POST, 'tax', FILTER_VALIDATE_FLOAT);
     $adminNotes = trim($_POST['admin_notes'] ?? '');
@@ -75,8 +82,8 @@ function handleSubmitQuote($conn) {
         throw new Exception('A valid Quote ID is required.');
     }
     
-    if ($quotedPrice === false || $quotedPrice <= 0) {
-        throw new Exception('A valid main quoted price is required.');
+    if ($quotedPrice === false || $quotedPrice < 0) { // Allow 0 for quotedPrice if needed, but not negative
+        throw new Exception('A valid main quoted price is required (must be 0 or greater).');
     }
     
     // Handle file upload
@@ -107,18 +114,37 @@ function handleSubmitQuote($conn) {
     if (!$quote_user_data) throw new Exception('User for the quote not found.');
 
     // 1. Update the quote in the database
-    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, discount = ?, tax = ?, admin_notes = ?, attachment_path = ? WHERE id = ?");
-    $stmt_update->bind_param("dddssi", $quotedPrice, $discount, $tax, $adminNotes, $attachmentPath, $quoteId);
+    // Ensure all relevant fields are saved to the 'quotes' table
+    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, daily_rate = ?, relocation_charge = ?, is_relocation_included = ?, swap_charge = ?, is_swap_included = ?, discount = ?, tax = ?, admin_notes = ?, attachment_path = ? WHERE id = ?");
+    $stmt_update->bind_param("dddiddddssi", 
+        $quotedPrice, 
+        $dailyRate, 
+        $relocationCharge, 
+        $isRelocationIncluded, // bind as int (0 or 1)
+        $swapCharge, 
+        $isSwapIncluded,     // bind as int (0 or 1)
+        $discount, 
+        $tax, 
+        $adminNotes, 
+        $attachmentPath, 
+        $quoteId
+    );
 
-    $stmt_update->execute();
+    if (!$stmt_update->execute()) { // Check for execution success
+        throw new Exception('Failed to update quote in the database: ' . $stmt_update->error);
+    }
     $stmt_update->close();
 
     // 2. Prepare and send email notification
     $customerEmail = $quote_user_data['email'];
+    // Calculate final price for email ONLY based on quoted_price, discount, and tax
+    $final_email_price = ($quotedPrice ?? 0) - ($discount ?? 0) + ($tax ?? 0);
+    $final_email_price = max(0, $final_email_price); // Ensure not negative
+
     $template_vars = [
         'template_companyName' => getSystemSetting('company_name') ?? 'CAT Dump',
         'template_quoteId' => $quoteId,
-        'template_quotedPrice' => number_format($quotedPrice - $discount + $tax, 2),
+        'template_quotedPrice' => number_format($final_email_price, 2), // Use final calculated price for initial quote
         'template_adminNotes' => $adminNotes,
         'template_customerQuoteLink' => "https://{$_SERVER['HTTP_HOST']}/customer/dashboard.php#quotes?quote_id={$quoteId}"
     ];
@@ -129,7 +155,7 @@ function handleSubmitQuote($conn) {
     sendEmail($customerEmail, "Your Quote #Q{$quoteId} is Ready!", $emailBody);
 
     // 3. Create a system notification for the user
-    $notification_message = "Your quote #{$quoteId} is ready! The quoted price is $" . number_format($quotedPrice, 2) . ".";
+    $notification_message = "Your quote #{$quoteId} is ready! The quoted price is $" . number_format($final_email_price, 2) . ".";
     $notification_link = "quotes?quote_id={$quoteId}";
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'new_quote', ?, ?)");
     $stmt_notify->bind_param("iss", $quote_user_data['id'], $notification_message, $notification_link);
@@ -157,7 +183,9 @@ function handleRejectQuote($conn, $quoteId) {
     // 1. Update quote status
     $stmt_update = $conn->prepare("UPDATE quotes SET status = 'rejected' WHERE id = ?");
     $stmt_update->bind_param("i", $quoteId);
-    $stmt_update->execute();
+    if (!$stmt_update->execute()) { // Check for execution success
+        throw new Exception('Failed to update quote status: ' . $stmt_update->error);
+    }
     $stmt_update->close();
 
     // 2. Notify customer via email
@@ -182,7 +210,7 @@ function handleRejectQuote($conn, $quoteId) {
 function handleResendQuote($conn, $quoteId) {
     // Fetch current quote details to get quoted price and admin notes
     $stmt_fetch = $conn->prepare("
-        SELECT q.quoted_price, q.admin_notes, u.email, u.first_name
+        SELECT q.quoted_price, q.admin_notes, q.discount, q.tax, u.email, u.first_name
         FROM quotes q
         JOIN users u ON q.user_id = u.id
         WHERE q.id = ? AND q.status = 'quoted'
@@ -196,11 +224,15 @@ function handleResendQuote($conn, $quoteId) {
         throw new Exception('Quote not found or is not in a "quoted" status.');
     }
 
+    // Calculate final price for email
+    $final_email_price = ($quote_data['quoted_price'] ?? 0) - ($quote_data['discount'] ?? 0) + ($quote_data['tax'] ?? 0);
+    $final_email_price = max(0, $final_email_price); // Ensure not negative
+
     // Prepare and send email notification
     $template_vars = [
         'template_companyName' => getSystemSetting('company_name') ?? 'CAT Dump',
         'template_quoteId' => $quoteId,
-        'template_quotedPrice' => number_format($quote_data['quoted_price'], 2),
+        'template_quotedPrice' => number_format($final_email_price, 2), // Use final calculated price
         'template_adminNotes' => $quote_data['admin_notes'],
         'template_customerQuoteLink' => "https://{$_SERVER['HTTP_HOST']}/customer/dashboard.php#quotes?quote_id={$quoteId}"
     ];
@@ -246,5 +278,3 @@ function handleDeleteBulk($conn) {
         throw $e; // Re-throw the exception to be caught by the main handler
     }
 }
-
-?>

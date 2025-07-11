@@ -23,23 +23,24 @@ date_default_timezone_set('UTC');
 
 if ($requested_booking_id) {
     // --- ENHANCED DATA FETCHING FOR DETAIL VIEW ---
+    // Fetching all relevant data including charges from the original quote
     $stmt = $conn->prepare("
         SELECT
             b.id, b.booking_number, b.service_type, b.start_date, b.end_date, b.status,
             b.delivery_location, b.pickup_location, b.delivery_instructions, b.pickup_instructions,
             b.total_price AS initial_price,
-            q.swap_charge, q.relocation_charge, q.daily_rate,
+            q.swap_charge, q.relocation_charge, q.daily_rate, q.is_swap_included, q.is_relocation_included,
             r.id as review_id,
             ext.id AS extension_request_id, ext.status AS extension_request_status,
-            ext_inv.id AS extension_invoice_id
+            ext_inv.id AS extension_invoice_id, ext_inv.status AS extension_invoice_status
         FROM bookings b
         LEFT JOIN invoices i ON b.invoice_id = i.id
         LEFT JOIN quotes q ON i.quote_id = q.id
         LEFT JOIN reviews r ON b.id = r.booking_id AND r.user_id = b.user_id
         LEFT JOIN booking_extension_requests ext ON b.id = ext.booking_id
-        LEFT JOIN invoices ext_inv ON ext.invoice_id = ext_inv.id AND ext_inv.status = 'pending'
+        LEFT JOIN invoices ext_inv ON ext.invoice_id = ext_inv.id
         WHERE b.id = ? AND b.user_id = ?
-        ORDER BY ext.created_at DESC
+        ORDER BY ext.created_at DESC -- Order by created_at to get the latest extension request if multiple exist
         LIMIT 1
     ");
     $stmt->bind_param("ii", $requested_booking_id, $user_id);
@@ -232,25 +233,27 @@ function getTimelineIconClass($status) {
                     </ol>
                 </div>
 
-                 <?php if (in_array($booking_detail['status'], ['delivered', 'in_use'])): ?>
+                 <?php if (in_array($booking_detail['status'], ['delivered', 'in_use', 'awaiting_pickup'])): // Show service requests for active rentals ?>
                     <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
                         <h3 class="text-xl font-semibold text-gray-700 mb-4">Service Requests</h3>
                         <div class="space-y-3">
                              <button class="w-full px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200 shadow-md request-relocation-btn"
                                      data-booking-id="<?php echo $booking_detail['id']; ?>"
-                                     data-charge="<?php echo htmlspecialchars($booking_detail['relocation_charge'] ?? '0.00'); ?>">
+                                     data-charge="<?php echo htmlspecialchars($booking_detail['relocation_charge'] ?? '0.00'); ?>"
+                                     data-is-included="<?php echo htmlspecialchars($booking_detail['is_relocation_included'] ? 'true' : 'false'); ?>">
                                  <i class="fas fa-truck-loading mr-2"></i>Request Relocation
                              </button>
                              <button class="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200 shadow-md request-swap-btn"
                                      data-booking-id="<?php echo $booking_detail['id']; ?>"
-                                     data-charge="<?php echo htmlspecialchars($booking_detail['swap_charge'] ?? '0.00'); ?>">
+                                     data-charge="<?php echo htmlspecialchars($booking_detail['swap_charge'] ?? '0.00'); ?>"
+                                     data-is-included="<?php echo htmlspecialchars($booking_detail['is_swap_included'] ? 'true' : 'false'); ?>">
                                  <i class="fas fa-exchange-alt mr-2"></i>Request Swap
                              </button>
-                             <?php if ($booking_detail['extension_request_status'] === 'pending'): ?>
+                             <?php if ($booking_detail['extension_request_id'] && $booking_detail['extension_request_status'] === 'pending'): ?>
                                 <div class="p-3 text-center bg-yellow-100 text-yellow-800 rounded-lg">
                                     <i class="fas fa-hourglass-half mr-2"></i>Your extension request is pending admin approval.
                                 </div>
-                             <?php elseif ($booking_detail['extension_request_status'] === 'approved' && !empty($booking_detail['extension_invoice_id'])): ?>
+                             <?php elseif ($booking_detail['extension_request_id'] && $booking_detail['extension_request_status'] === 'approved' && $booking_detail['extension_invoice_id'] && $booking_detail['extension_invoice_status'] === 'pending'): ?>
                                 <button class="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-md animate-pulse"
                                         onclick="window.loadCustomerSection('invoices', { invoice_id: <?php echo $booking_detail['extension_invoice_id']; ?> });">
                                     <i class="fas fa-file-invoice-dollar mr-2"></i>Pay for Extension
@@ -371,7 +374,8 @@ function getTimelineIconClass($status) {
 <div id="relocation-request-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
     <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md text-gray-800">
         <h3 class="text-xl font-bold mb-4">Request Relocation</h3>
-        <p class="mb-4">A one-time charge for this service will be applied: <span class="font-bold text-blue-600" id="relocation-charge-display">$0.00</span></p>
+        <!-- Added unique ID to the paragraph for safer targeting -->
+        <p id="relocation-charge-text" class="mb-4">A one-time charge for this service will be applied: <span class="font-bold text-blue-600" id="relocation-charge-display">$0.00</span></p>
         <form id="relocation-form">
             <input type="hidden" name="action" value="request_relocation">
             <input type="hidden" name="booking_id" id="relocation-booking-id">
@@ -391,7 +395,8 @@ function getTimelineIconClass($status) {
 <div id="swap-request-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
     <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-md text-gray-800">
         <h3 class="text-xl font-bold mb-4">Request Swap</h3>
-        <p class="mb-6">A one-time charge of <span class="font-bold text-purple-600" id="swap-charge-display">$0.00</span> will be applied to swap your equipment. Are you sure you want to proceed?</p>
+        <!-- Added unique ID to the paragraph for safer targeting -->
+        <p id="swap-charge-text" class="mb-6">A one-time charge of <span class="font-bold text-purple-600" id="swap-charge-display">$0.00</span> will be applied to swap your equipment. Are you sure you want to proceed?</p>
         <form id="swap-form">
             <input type="hidden" name="action" value="request_swap">
             <input type="hidden" name="booking_id" id="swap-booking-id">
@@ -532,13 +537,51 @@ function getTimelineIconClass($status) {
         const bookingId = target.dataset.bookingId;
 
         if (target.classList.contains('request-relocation-btn')) {
+            const isIncluded = target.dataset.isIncluded === 'true';
+            const charge = parseFloat(target.dataset.charge || '0').toFixed(2);
             document.getElementById('relocation-booking-id').value = bookingId;
-            document.getElementById('relocation-charge-display').textContent = `$`+parseFloat(target.dataset.charge || '0').toFixed(2);
+            
+            // Target the specific paragraph by its new ID
+            const chargeTextParagraph = document.getElementById('relocation-charge-text');
+            const relocationForm = document.getElementById('relocation-form'); // Get form reference
+            const submitButton = relocationForm.querySelector('button[type="submit"]');
+
+            if (isIncluded) {
+                chargeTextParagraph.innerHTML = `This service is included in your original quote.`;
+                submitButton.textContent = 'Submit Request';
+                submitButton.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                submitButton.classList.add('bg-green-600', 'hover:bg-green-700');
+            } else {
+                chargeTextParagraph.innerHTML = `A one-time charge for this service will be applied: <span class="font-bold text-blue-600">$${charge}</span>`;
+                submitButton.textContent = 'Proceed to Payment';
+                submitButton.classList.remove('bg-green-600', 'hover:bg-green-700');
+                submitButton.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+            }
+
             showModal('relocation-request-modal');
         }
         if (target.classList.contains('request-swap-btn')) {
+            const isIncluded = target.dataset.isIncluded === 'true';
+            const charge = parseFloat(target.dataset.charge || '0').toFixed(2);
             document.getElementById('swap-booking-id').value = bookingId;
-            document.getElementById('swap-charge-display').textContent = `$`+parseFloat(target.dataset.charge || '0').toFixed(2);
+
+            // Target the specific paragraph by its new ID
+            const chargeTextParagraph = document.getElementById('swap-charge-text');
+            const swapForm = document.getElementById('swap-form'); // Get form reference
+            const submitButton = swapForm.querySelector('button[type="submit"]');
+
+            if (isIncluded) {
+                chargeTextParagraph.innerHTML = `This service is included in your original quote. Are you sure you want to proceed with the swap?`;
+                submitButton.textContent = 'Submit Request';
+                submitButton.classList.remove('bg-purple-600', 'hover:bg-purple-700');
+                submitButton.classList.add('bg-green-600', 'hover:bg-green-700');
+            } else {
+                chargeTextParagraph.innerHTML = `A one-time charge of <span class="font-bold text-purple-600">$${charge}</span> will be applied to swap your equipment. Are you sure you want to proceed?`;
+                submitButton.textContent = 'Yes, Proceed to Payment';
+                submitButton.classList.remove('bg-green-600', 'hover:bg-green-700');
+                submitButton.classList.add('bg-purple-600', 'hover:bg-purple-700');
+            }
+
             showModal('swap-request-modal');
         }
         if (target.classList.contains('schedule-pickup-btn')) {
@@ -572,10 +615,10 @@ function getTimelineIconClass($status) {
         });
     }
 
+    // Pass the form element directly to callBookingApi
     document.getElementById('extension-form')?.addEventListener('submit', function(e) { e.preventDefault(); callBookingApi(this); });
     document.getElementById('relocation-form')?.addEventListener('submit', function(e) { e.preventDefault(); callBookingApi(this); });
     document.getElementById('swap-form')?.addEventListener('submit', function(e) { e.preventDefault(); callBookingApi(this); });
     document.getElementById('pickup-form')?.addEventListener('submit', function(e) { e.preventDefault(); callBookingApi(this); });
 
 })();
-</script>

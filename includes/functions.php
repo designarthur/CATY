@@ -192,15 +192,11 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
         SELECT
             i.user_id, i.amount, i.quote_id,
             q.service_type, q.location, q.delivery_date, q.removal_date, q.live_load_needed,
-            q.is_urgent, q.driver_instructions, q.daily_rate,
-            qed.equipment_name, qed.quantity, qed.specific_needs, qed.duration_days,
-            jrd.junk_items_json, jrd.recommended_dumpster_size,
+            q.is_urgent, q.driver_instructions, q.daily_rate, q.quoted_price,
             u.first_name, u.email
         FROM invoices i
         JOIN users u ON i.user_id = u.id
         LEFT JOIN quotes q ON i.quote_id = q.id
-        LEFT JOIN quote_equipment_details qed ON q.id = qed.quote_id
-        LEFT JOIN junk_removal_details jrd ON q.id = jrd.quote_id
         WHERE i.id = ?
     ");
     $stmt_fetch->bind_param("i", $invoice_id);
@@ -221,12 +217,13 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
     }
 
     $booking_number = 'BK-' . str_pad($invoice_id, 6, '0', STR_PAD_LEFT);
-    $start_date = $data['delivery_date'] ?? $data['removal_date'];
-    $end_date = null;
+    $start_date = $data['delivery_date'] ?? $data['removal_date']; // Use delivery or removal date from quote
+    $end_date = null; // Will be calculated based on duration or default
     $equipment_details_json = null;
     $junk_details_json = null;
 
-    if ($data['service_type'] == 'equipment_rental') {
+    // Fetch service-specific details from quote tables if available
+    if ($data['service_type'] == 'equipment_rental' && $data['quote_id']) {
         // Fetch all equipment details for the quote to properly serialize them
         $equipment_items_for_json = [];
         $stmt_eq_details = $conn->prepare("SELECT equipment_name, quantity, duration_days, specific_needs FROM quote_equipment_details WHERE quote_id = ?");
@@ -244,7 +241,7 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
         $duration = !empty($equipment_items_for_json[0]['duration_days']) ? $equipment_items_for_json[0]['duration_days'] : 7; // Default to 7 days
         $end_date = $start_date ? (new DateTime($start_date))->modify("+$duration days")->format('Y-m-d') : null;
 
-    } else if ($data['service_type'] == 'junk_removal') {
+    } else if ($data['service_type'] == 'junk_removal' && $data['quote_id']) {
         // Fetch junk removal details for the quote to properly serialize them
         $junk_details_for_json = [];
         $stmt_junk_details = $conn->prepare("SELECT junk_items_json, recommended_dumpster_size, additional_comment FROM junk_removal_details WHERE quote_id = ?");
@@ -261,6 +258,8 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
             ];
         }
         $junk_details_json = json_encode($junk_details_for_json);
+        // For junk removal, end_date might be the same as start_date or null if it's a one-time service
+        $end_date = $start_date; 
     }
     
     // Convert boolean-like values to actual integers (0 or 1) for tinyint columns
@@ -271,23 +270,23 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
         INSERT INTO bookings (invoice_id, user_id, booking_number, service_type, status, start_date, end_date, delivery_location, delivery_instructions, live_load_requested, is_urgent, total_price, equipment_details, junk_details)
         VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
-    // Corrected bind_param types: iissssiidsdss
-    // invoice_id (i), user_id (i), booking_number (s), service_type (s),
-    // start_date (s), end_date (s), delivery_location (s), delivery_instructions (s),
-    // live_load_requested (i), is_urgent (i), total_price (d), equipment_details (s), junk_details (s)
+    // Corrected bind_param types: i (invoice_id), i (user_id), s (booking_number), s (service_type),
+    // s (status), s (start_date), s (end_date), s (delivery_location), s (delivery_instructions),
+    // i (live_load_requested), i (is_urgent), d (total_price), s (equipment_details), s (junk_details)
     $stmt_booking->bind_param(
-        "iissssiidsdss",
+        "iissssssiidsdss",
         $invoice_id,
         $data['user_id'],
         $booking_number,
         $data['service_type'],
+        'scheduled', // Initial status when booking is created from paid invoice
         $start_date,
-        $end_date,
-        $data['location'],
+        $end_date, // This will be NULL for junk removal or calculated for equipment
+        $data['location'], // Use quote location for delivery_location
         $data['driver_instructions'],
-        $live_load_requested_int, // Corrected type
-        $is_urgent_int,           // Corrected type
-        $data['amount'],          // Corrected type
+        $live_load_requested_int, 
+        $is_urgent_int,           
+        $data['amount'],          // Use the invoice amount as total_price for the booking
         $equipment_details_json,
         $junk_details_json
     );
