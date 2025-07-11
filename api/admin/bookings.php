@@ -172,15 +172,17 @@ function handleAddCharge($conn) {
     $conn->begin_transaction();
     
     // 1. Fetch booking user for invoice creation
-    $stmt_user = $conn->prepare("SELECT user_id FROM bookings WHERE id = ?");
+    $stmt_user = $conn->prepare("SELECT user_id, booking_number FROM bookings WHERE id = ?");
     $stmt_user->bind_param("i", $booking_id);
     $stmt_user->execute();
-    $user_id = $stmt_user->get_result()->fetch_assoc()['user_id'];
+    $booking_data = $stmt_user->get_result()->fetch_assoc();
     $stmt_user->close();
 
-    if(!$user_id) {
+    if(!$booking_data) {
         throw new Exception('Could not find the user associated with this booking.');
     }
+    $user_id = $booking_data['user_id'];
+    $booking_number = $booking_data['booking_number'];
 
     // 2. Insert into booking_charges
     $stmt_charge = $conn->prepare("INSERT INTO booking_charges (booking_id, charge_type, amount, description, created_by_admin_id) VALUES (?, ?, ?, ?, ?)");
@@ -194,7 +196,7 @@ function handleAddCharge($conn) {
     // 3. Create a new invoice for this charge
     $invoice_number = 'INV-CHG-' . strtoupper(generateToken(6));
     $due_date = date('Y-m-d', strtotime('+14 days'));
-    $notes = "Additional charge for Booking #{$booking_id}: " . $description;
+    $notes = "Additional charge for Booking #{$booking_number}: " . $description;
 
     $stmt_invoice = $conn->prepare("INSERT INTO invoices (user_id, booking_id, invoice_number, amount, status, due_date, notes) VALUES (?, ?, ?, ?, 'pending', ?, ?)");
     $stmt_invoice->bind_param("iisdss", $user_id, $booking_id, $invoice_number, $amount, $due_date, $notes);
@@ -211,7 +213,7 @@ function handleAddCharge($conn) {
     $stmt_link->close();
 
     // 5. Notify Customer
-    $notification_message = "An additional charge of $" . number_format($amount, 2) . " for '{$description}' has been added to Booking #{$booking_id}.";
+    $notification_message = "An additional charge of $" . number_format($amount, 2) . " for '{$description}' has been added to Booking #{$booking_number}.";
     $notification_link = "invoices?invoice_id={$invoice_id}";
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'payment_due', ?, ?)");
     $stmt_notify->bind_param("iss", $user_id, $notification_message, $notification_link);
@@ -308,7 +310,7 @@ function handleApproveExtension($conn) {
     $stmt_charge->close();
     
     // Note: The booking end_date is NOT updated here. It should only be updated AFTER the customer pays the extension invoice.
-    // This logic should be added to the payment processing script (e.g., api/payments.php).
+    // This logic is now in api/payments.php
 
     // 5. Notify the customer
     $notification_message = "Your rental extension request for Booking #{$booking['booking_number']} has been approved! Please pay the new invoice to confirm.";
