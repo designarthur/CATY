@@ -148,6 +148,7 @@ $conn->close();
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -530,15 +531,15 @@ $conn->close();
             }
         };
 
-        // Helper for AI chat messages
         function addAIChatMessage(message, sender) {
-            const aiChatMessagesDiv = document.getElementById('ai-chat-messages');
-            const messageDiv = document.createElement('div');
-            messageDiv.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble'); // Apply chat bubble styles
-            messageDiv.innerHTML = `<span class="font-semibold ${sender === 'user' ? 'text-green-200' : 'text-blue-800'}">${sender === 'user' ? 'You' : 'AI'}:</span> ${message}`; // Adjusted text color for better contrast
-            aiChatMessagesDiv.appendChild(messageDiv);
-            aiChatMessagesDiv.scrollTop = aiChatMessagesDiv.scrollHeight;
-        }
+    const aiChatMessagesDiv = document.getElementById('ai-chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
+    // Use innerHTML and marked.parse() for rendering markdown
+    messageDiv.innerHTML = `<span class="font-semibold ${sender === 'user' ? 'text-green-200' : 'text-blue-800'}">${sender === 'user' ? 'You' : 'AI'}:</span> ${marked.parse(message)}`;
+    aiChatMessagesDiv.appendChild(messageDiv);
+    aiChatMessagesDiv.scrollTop = aiChatMessagesDiv.scrollHeight;
+}
 
         // --- Video Frame Extraction Function ---
         function extractFramesFromVideo(videoFile, numFrames) {

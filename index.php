@@ -27,6 +27,7 @@ if (!$companyName) {
     <title><?php echo htmlspecialchars($companyName); ?> - Your Gateway to Equipment Rental Excellence</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -1680,12 +1681,13 @@ if (!$companyName) {
 
 
             const addMessage = (message, sender, container) => {
-                const bubble = document.createElement('div');
-                bubble.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
-                bubble.textContent = message;
-                container.appendChild(bubble);
-                container.scrollTop = container.scrollHeight;
-            };
+    const bubble = document.createElement('div');
+    bubble.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
+    // Use innerHTML and marked.parse() for rendering markdown
+    bubble.innerHTML = marked.parse(message); // Change here
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+};
 
             const showTypingIndicator = (container) => {
                 const indicator = document.createElement('div');
