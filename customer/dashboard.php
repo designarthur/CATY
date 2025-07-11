@@ -710,29 +710,6 @@ $conn->close();
     <video id="hiddenVideo" style="display:none;" controls></video>
     <canvas id="hiddenCanvas" style="display:none;"></canvas>
 
-    <div id="ai-chat-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-lg h-3/4 flex flex-col text-gray-800">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold text-gray-800" id="ai-chat-title">AI Assistant</h3>
-                <button class="text-gray-500 hover:text-gray-700 text-2xl" onclick="hideModal('ai-chat-modal')">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div id="ai-chat-messages" class="flex-1 overflow-y-auto border border-gray-300 rounded-lg p-4 mb-4 custom-scroll">
-            </div>
-            <div id="ai-chat-file-upload-section" class="mb-2 flex items-center hidden">
-                <input type="file" id="ai-chat-file-input" name="media_files[]" multiple style="display: none;">
-                <label for="ai-chat-file-input" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 cursor-pointer text-sm">
-                    <i class="fas fa-paperclip mr-2"></i>Attach Files
-                </label>
-                <span id="ai-chat-selected-files" class="ml-2 text-sm text-gray-500"></span>
-            </div>
-            <div class="flex">
-                <input type="text" id="ai-chat-input" placeholder="Type your message..." class="flex-1 p-3 border border-gray-300 rounded-l-lg focus:ring-blue-500 focus:border-blue-500">
-                <button id="ai-chat-send-btn" class="px-4 py-3 bg-blue-600 text-white rounded-r-lg hover:bg-blue-700 transition-colors duration-200">Send</button>
-            </div>
-        </div>
-    </div>
 
 
     <script>
