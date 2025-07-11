@@ -48,8 +48,9 @@ if ($requested_booking_id) {
     $stmt->close();
 
     if ($booking_detail) {
-        // Calculate remaining days
-        if (in_array($booking_detail['status'], ['delivered', 'in_use', 'awaiting_pickup']) && !empty($booking_detail['end_date'])) {
+        // Calculate remaining days, safely handling potential NULL or empty end_date
+        if (in_array($booking_detail['status'], ['delivered', 'in_use', 'awaiting_pickup']) && 
+            !empty($booking_detail['end_date'])) { // The !empty check prevents processing if it's null or empty string
             try {
                 $endDate = new DateTime($booking_detail['end_date']);
                 $today = new DateTime('today'); // Use 'today' to ignore the time part
@@ -61,9 +62,12 @@ if ($requested_booking_id) {
                     $booking_detail['remaining_days'] = 0;
                 }
             } catch (Exception $e) {
-                // Handle potential DateTime creation errors
+                // Log the exception if needed, and set a fallback
+                error_log("DateTime conversion error for booking ID {$requested_booking_id}: {$e->getMessage()}");
                 $booking_detail['remaining_days'] = 'N/A';
             }
+        } else {
+            $booking_detail['remaining_days'] = 'N/A'; // No remaining days if status is not applicable or end_date is missing
         }
 
 
@@ -194,7 +198,7 @@ function getTimelineIconClass($status) {
                         <?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $booking_detail['status']))); ?>
                     </span>
                     
-                    <?php if (isset($booking_detail['remaining_days'])): ?>
+                    <?php if (isset($booking_detail['remaining_days']) && $booking_detail['remaining_days'] !== 'N/A'): ?>
                         <div class="mt-4 pt-4 border-t border-gray-200">
                             <p class="text-gray-500 mb-2">Time Remaining:</p>
                             <div class="text-center p-4 rounded-lg <?php echo $booking_detail['remaining_days'] < 3 ? 'bg-red-100' : 'bg-green-100'; ?>">
@@ -273,7 +277,7 @@ function getTimelineIconClass($status) {
                      <div class="space-y-3">
                         <p><strong>Service Type:</strong> <?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $booking_detail['service_type']))); ?></p>
                         <p><strong>Rental Start:</strong> <?php echo (new DateTime($booking_detail['start_date']))->format('F j, Y'); ?></p>
-                        <p><strong>Rental End:</strong> <?php echo (new DateTime($booking_detail['end_date']))->format('F j, Y'); ?></p>
+                        <p><strong>Rental End:</strong> <?php echo !empty($booking_detail['end_date']) ? (new DateTime($booking_detail['end_date']))->format('F j, Y') : 'N/A'; ?></p>
                         <p><strong>Delivery Location:</strong> <?php echo htmlspecialchars($booking_detail['delivery_location']); ?></p>
                         <?php if(!empty($booking_detail['delivery_instructions'])): ?>
                              <p><strong>Instructions:</strong> <?php echo htmlspecialchars($booking_detail['delivery_instructions']); ?></p>
