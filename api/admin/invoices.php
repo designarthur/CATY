@@ -86,11 +86,12 @@ function handleUpdateStatus($conn) {
         // 1. Fetch current invoice and customer details for notification
         // Using LEFT JOIN to ensure service_type and quote_location are available even if invoice.quote_id is NULL
         // Also fetching user's address for fallback delivery_location
+        // Fetching booking_id from invoice to check if it's an existing booking for additional charges
         $stmt_fetch = $conn->prepare("
             SELECT 
-                i.invoice_number, i.status AS old_status, i.quote_id, i.amount,
+                i.invoice_number, i.status AS old_status, i.quote_id, i.amount, i.booking_id AS existing_booking_id,
                 u.id AS user_id, u.first_name, u.email, u.address AS user_address, u.city AS user_city, u.state AS user_state, u.zip_code AS user_zip_code,
-                q.service_type, q.location AS quote_location 
+                q.service_type AS quote_service_type, q.location AS quote_location 
             FROM invoices i 
             JOIN users u ON i.user_id = u.id 
             LEFT JOIN quotes q ON i.quote_id = q.id 
@@ -117,20 +118,38 @@ function handleUpdateStatus($conn) {
         }
         $stmt_update->close();
 
-        // 3. If status is 'paid', create a booking
+        // 3. If status is 'paid', create a booking or update existing one (for extensions/charges)
         $booking_id = null;
         if ($new_status === 'paid') {
-            // Check if a booking already exists to avoid duplicates
-            $stmt_check_booking = $conn->prepare("SELECT id FROM bookings WHERE invoice_id = ?");
-            $stmt_check_booking->bind_param("i", $invoice_id);
-            $stmt_check_booking->execute();
-            $existing_booking = $stmt_check_booking->get_result()->fetch_assoc();
-            $stmt_check_booking->close();
+            // Check if this invoice is linked to an existing booking (e.g., for additional charges, extensions)
+            if ($invoice_data['existing_booking_id']) {
+                $booking_id = $invoice_data['existing_booking_id'];
 
-            if ($existing_booking) {
-                error_log("Booking already exists for invoice_id: $invoice_id, booking_id: {$existing_booking['id']}");
-                $booking_id = $existing_booking['id']; // Use existing booking ID for notification
+                // If this payment is for an extension, update the booking's end_date
+                // First, check if there's a related extension request
+                $stmt_ext_req = $conn->prepare("SELECT requested_days FROM booking_extension_requests WHERE invoice_id = ? AND status = 'approved'");
+                $stmt_ext_req->bind_param("i", $invoice_id);
+                $stmt_ext_req->execute();
+                $ext_data = $stmt_ext_req->get_result()->fetch_assoc();
+                $stmt_ext_req->close();
+
+                if ($ext_data && $ext_data['requested_days'] > 0) {
+                    // Update the booking's end date
+                    $stmt_update_end_date = $conn->prepare("UPDATE bookings SET end_date = DATE_ADD(end_date, INTERVAL ? DAY) WHERE id = ?");
+                    $stmt_update_end_date->bind_param("ii", $ext_data['requested_days'], $booking_id);
+                    $stmt_update_end_date->execute();
+                    $stmt_update_end_date->close();
+
+                    // Log the status history for the extension payment
+                    $notes = "Booking extended by {$ext_data['requested_days']} days due to paid invoice #{$invoice_data['invoice_number']}.";
+                    $stmt_log_ext = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, 'extended', ?)");
+                    $stmt_log_ext->bind_param("is", $booking_id, $notes);
+                    $stmt_log_ext->execute();
+                    $stmt_log_ext->close();
+                }
+
             } else {
+                // This is a new booking from a quote
                 // Determine the delivery_location for the booking
                 $delivery_location_for_booking = $invoice_data['quote_location'] ?? null;
                 if (empty($delivery_location_for_booking)) {
@@ -142,14 +161,25 @@ function handleUpdateStatus($conn) {
                 }
 
                 // Determine service_type for the booking
-                $service_type_for_booking = $invoice_data['service_type'] ?? 'other_service'; // Fallback for service_type if no quote
+                // Use quote_service_type if available, otherwise a generic 'other_service'
+                $service_type_for_booking = $invoice_data['quote_service_type'] ?? 'other_service'; 
+                
+                // Ensure service_type_for_booking is one of the allowed ENUM values for 'bookings' table
+                $allowed_booking_service_types = ['equipment_rental', 'junk_removal'];
+                if (!in_array($service_type_for_booking, $allowed_booking_service_types)) {
+                    // If it's not a standard type from a quote, default to 'equipment_rental' or 'junk_removal'
+                    // or a new generic type if you add one to the ENUM in DB.
+                    // For now, let's default to 'equipment_rental' if it's an unknown type.
+                    $service_type_for_booking = 'equipment_rental'; 
+                    error_log("Unknown service_type '{$invoice_data['quote_service_type']}' for booking ID {$booking_id}. Defaulting to 'equipment_rental'.");
+                }
+
 
                 // Create a booking
-                $booking_number = 'BOOK-' . strtoupper(generateToken(8));
+                $booking_number = 'BOOK-' . strtoupper(generateToken(6)); // Shorten token for booking number
                 $start_date = date('Y-m-d'); // Adjust based on quote or requirements
-                $booking_status = 'scheduled'; // Changed to 'scheduled' as per general flow in functions.php
+                $booking_status = 'scheduled'; 
 
-                // CORRECTED: Added 'delivery_location' and 'total_price' to the bookings INSERT statement
                 $stmt_booking = $conn->prepare("
                     INSERT INTO bookings (invoice_id, user_id, booking_number, service_type, status, start_date, delivery_location, total_price)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -191,7 +221,7 @@ function handleUpdateStatus($conn) {
         $email_body = "<p>Dear {$invoice_data['first_name']},</p><p>The payment status for your invoice #<strong>{$invoice_data['invoice_number']}</strong> has been updated to: <strong>" . strtoupper($new_status) . "</strong>.</p>";
         if ($booking_id) {
             // Only add booking details if a booking was created or found
-            $email_body .= "<p>A booking (#" . ($booking_id ? getBookingNumberFromId($conn, $booking_id) : 'N/A') . ") has been created for your service.</p>";
+            $email_body .= "<p>A booking (#" . (getBookingNumberFromId($conn, $booking_id)) . ") has been created/updated for your service.</p>";
         }
         sendEmail($invoice_data['email'], $email_subject, $email_body);
 
