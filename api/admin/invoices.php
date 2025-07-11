@@ -84,11 +84,16 @@ function handleUpdateStatus($conn) {
 
     try {
         // 1. Fetch current invoice and customer details for notification
+        // Using LEFT JOIN to ensure service_type and quote_location are available even if invoice.quote_id is NULL
+        // Also fetching user's address for fallback delivery_location
         $stmt_fetch = $conn->prepare("
-            SELECT i.invoice_number, i.status AS old_status, i.quote_id, u.id AS user_id, u.first_name, u.email, q.service_type 
+            SELECT 
+                i.invoice_number, i.status AS old_status, i.quote_id, i.amount,
+                u.id AS user_id, u.first_name, u.email, u.address AS user_address, u.city AS user_city, u.state AS user_state, u.zip_code AS user_zip_code,
+                q.service_type, q.location AS quote_location 
             FROM invoices i 
             JOIN users u ON i.user_id = u.id 
-            JOIN quotes q ON i.quote_id = q.id 
+            LEFT JOIN quotes q ON i.quote_id = q.id 
             WHERE i.id = ?
         ");
         $stmt_fetch->bind_param("i", $invoice_id);
@@ -97,7 +102,7 @@ function handleUpdateStatus($conn) {
         $stmt_fetch->close();
 
         if (!$invoice_data) {
-            throw new Exception('Invoice or associated quote not found.');
+            throw new Exception('Invoice or associated user not found.');
         }
         if ($invoice_data['old_status'] === $new_status) {
             $conn->rollback();
@@ -124,25 +129,41 @@ function handleUpdateStatus($conn) {
 
             if ($existing_booking) {
                 error_log("Booking already exists for invoice_id: $invoice_id, booking_id: {$existing_booking['id']}");
+                $booking_id = $existing_booking['id']; // Use existing booking ID for notification
             } else {
+                // Determine the delivery_location for the booking
+                $delivery_location_for_booking = $invoice_data['quote_location'] ?? null;
+                if (empty($delivery_location_for_booking)) {
+                    // Fallback to user's registered address if quote location is not available
+                    $delivery_location_for_booking = trim($invoice_data['user_address'] . ', ' . $invoice_data['user_city'] . ', ' . $invoice_data['user_state'] . ' ' . $invoice_data['user_zip_code']);
+                    if (empty($delivery_location_for_booking)) {
+                        $delivery_location_for_booking = 'N/A'; // Final fallback, though ideally a real address should be captured
+                    }
+                }
+
+                // Determine service_type for the booking
+                $service_type_for_booking = $invoice_data['service_type'] ?? 'other_service'; // Fallback for service_type if no quote
+
                 // Create a booking
                 $booking_number = 'BOOK-' . strtoupper(generateToken(8));
                 $start_date = date('Y-m-d'); // Adjust based on quote or requirements
-                $booking_status = 'confirmed';
+                $booking_status = 'scheduled'; // Changed to 'scheduled' as per general flow in functions.php
 
+                // CORRECTED: Added 'delivery_location' and 'total_price' to the bookings INSERT statement
                 $stmt_booking = $conn->prepare("
-                    INSERT INTO bookings (quote_id, invoice_id, user_id, booking_number, service_type, start_date, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO bookings (invoice_id, user_id, booking_number, service_type, status, start_date, delivery_location, total_price)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt_booking->bind_param(
-                    "iiissss",
-                    $invoice_data['quote_id'],
+                    "iisssssd", // Types: i (invoice_id), i (user_id), s (booking_number), s (service_type), s (status), s (start_date), s (delivery_location), d (total_price)
                     $invoice_id,
                     $invoice_data['user_id'],
                     $booking_number,
-                    $invoice_data['service_type'],
+                    $service_type_for_booking,
+                    $booking_status,
                     $start_date,
-                    $booking_status
+                    $delivery_location_for_booking,
+                    $invoice_data['amount'] // Using invoice amount as total_price for the booking
                 );
                 if (!$stmt_booking->execute()) {
                     throw new Exception("Failed to create booking: " . $stmt_booking->error);
@@ -155,7 +176,7 @@ function handleUpdateStatus($conn) {
                 $notification_link = "bookings?booking_id=$booking_id";
                 $stmt_notify_booking = $conn->prepare("
                     INSERT INTO notifications (user_id, type, message, link)
-                    VALUES (?, 'booking_created', ?, ?)
+                    VALUES (?, 'booking_confirmed', ?, ?)
                 ");
                 $stmt_notify_booking->bind_param("iss", $invoice_data['user_id'], $notification_message, $notification_link);
                 if (!$stmt_notify_booking->execute()) {
@@ -169,7 +190,8 @@ function handleUpdateStatus($conn) {
         $email_subject = "Update on your invoice #{$invoice_data['invoice_number']}";
         $email_body = "<p>Dear {$invoice_data['first_name']},</p><p>The payment status for your invoice #<strong>{$invoice_data['invoice_number']}</strong> has been updated to: <strong>" . strtoupper($new_status) . "</strong>.</p>";
         if ($booking_id) {
-            $email_body .= "<p>A booking (#$booking_number) has been created for your service.</p>";
+            // Only add booking details if a booking was created or found
+            $email_body .= "<p>A booking (#" . ($booking_id ? getBookingNumberFromId($conn, $booking_id) : 'N/A') . ") has been created for your service.</p>";
         }
         sendEmail($invoice_data['email'], $email_subject, $email_body);
 
@@ -177,7 +199,7 @@ function handleUpdateStatus($conn) {
         $response = ['success' => true, 'message' => "Invoice status updated to '{$new_status}' and customer notified."];
         if ($booking_id) {
             $response['booking_id'] = $booking_id;
-            $response['message'] .= " Booking #$booking_number created.";
+            $response['message'] .= " Booking #".getBookingNumberFromId($conn, $booking_id)." created/confirmed.";
         }
         return $response;
 
@@ -186,6 +208,18 @@ function handleUpdateStatus($conn) {
         error_log("Update status error for invoice_id: $invoice_id, status: $new_status - " . $e->getMessage());
         throw $e;
     }
+}
+
+/**
+ * Helper function to retrieve booking number by ID
+ */
+function getBookingNumberFromId($conn, $booking_id) {
+    $stmt = $conn->prepare("SELECT booking_number FROM bookings WHERE id = ?");
+    $stmt->bind_param("i", $booking_id);
+    $stmt->execute();
+    $result = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $result['booking_number'] ?? 'N/A';
 }
 
 /**
@@ -317,4 +351,3 @@ function handleDeleteBulk($conn) {
         throw $e;
     }
 }
-?>
