@@ -151,6 +151,31 @@ function getSystemSetting($key) {
     return $settings[$key];
 }
 
+
+/**
+ * Gets the count of unread items for the admin sidebar.
+ * @return array Associative array with 'quotes' and 'invoices' counts.
+ */
+function get_admin_notification_counts() {
+    global $conn;
+    $counts = ['quotes' => 0, 'invoices' => 0];
+
+    // Get count of unviewed quotes
+    $result_quotes = $conn->query("SELECT COUNT(*) AS count FROM quotes WHERE is_viewed_by_admin = 0 AND status = 'pending'");
+    if ($result_quotes) {
+        $counts['quotes'] = $result_quotes->fetch_assoc()['count'];
+    }
+
+    // Get count of unviewed invoices
+    $result_invoices = $conn->query("SELECT COUNT(*) AS count FROM invoices WHERE is_viewed_by_admin = 0 AND status = 'pending'");
+    if ($result_invoices) {
+        $counts['invoices'] = $result_invoices->fetch_assoc()['count'];
+    }
+
+    return $counts;
+}
+
+
 /**
  * Centralized function to create a booking after a successful payment.
  * @param mysqli $conn The database connection object.

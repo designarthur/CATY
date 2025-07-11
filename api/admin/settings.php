@@ -21,8 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_settings') {
     try {
         $settings_to_update = [
             'company_name' => trim($_POST['company_name'] ?? ''),
-            'admin_email' => trim($_POST['admin_email'] ?? '')
-            // Add other configurable settings here if you add them to the form
+            'admin_email' => trim($_POST['admin_email'] ?? ''),
+            'global_tax_rate' => filter_input(INPUT_POST, 'global_tax_rate', FILTER_VALIDATE_FLOAT, ['options' => ['min_range' => 0]]),
+            'global_service_fee' => filter_input(INPUT_POST, 'global_service_fee', FILTER_VALIDATE_FLOAT, ['options' => ['min_range' => 0]])
         ];
 
         foreach ($settings_to_update as $key => $value) {
@@ -38,6 +39,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_settings') {
                     throw new Exception('Invalid Admin Email Recipient format.');
                 }
             }
+             if (($key === 'global_tax_rate' || $key === 'global_service_fee') && $value === false) {
+                throw new Exception(ucwords(str_replace('_', ' ', $key)) . ' must be a valid number.');
+            }
+            
             // Add more specific validations for other settings here
 
             $stmt = $conn->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = ?");

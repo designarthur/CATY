@@ -26,29 +26,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $action = $_POST['action'] ?? '';
 $quoteId = filter_input(INPUT_POST, 'quote_id', FILTER_VALIDATE_INT);
 
-if (!$quoteId && $action !== 'submit_quote') { // quoteId is not required for submit_quote as it's in the form
-    if (isset($_POST['quote_id'])) {
-        $quoteId = filter_input(INPUT_POST, 'quote_id', FILTER_VALIDATE_INT);
-    }
-    if(!$quoteId) {
-        http_response_code(400); // Bad Request
-        echo json_encode(['success' => false, 'message' => 'A valid Quote ID is required.']);
-        exit;
-    }
-}
-
-
 // --- Action Routing ---
 try {
     switch ($action) {
         case 'submit_quote':
-            handleSubmitQuote($conn, $_POST['quote_id']);
+            handleSubmitQuote($conn);
             break;
         case 'resend_quote':
             handleResendQuote($conn, $quoteId);
             break;
         case 'reject_quote':
             handleRejectQuote($conn, $quoteId);
+            break;
+        case 'delete_bulk':
+            handleDeleteBulk($conn);
             break;
         default:
             http_response_code(400);
@@ -57,7 +48,7 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(500); // Internal Server Error
-    error_log("Admin Quote API Error for Quote ID {$quoteId}: " . $e->getMessage());
+    error_log("Admin Quote API Error: " . $e->getMessage());
     echo json_encode(['success' => false, 'message' => 'An internal server error occurred. ' . $e->getMessage()]);
 } finally {
     if (isset($conn) && $conn->ping()) {
@@ -71,25 +62,39 @@ try {
 /**
  * Submits a price for a quote, including new charges, and notifies the customer.
  */
-function handleSubmitQuote($conn, $quoteId) {
+function handleSubmitQuote($conn) {
     // --- Input Validation ---
+    $quoteId = filter_input(INPUT_POST, 'quote_id', FILTER_VALIDATE_INT);
     $quotedPrice = filter_input(INPUT_POST, 'quoted_price', FILTER_VALIDATE_FLOAT);
-    $dailyRate = filter_input(INPUT_POST, 'daily_rate', FILTER_VALIDATE_FLOAT);
-    $swapCharge = filter_input(INPUT_POST, 'swap_charge', FILTER_VALIDATE_FLOAT);
-    $relocationCharge = filter_input(INPUT_POST, 'relocation_charge', FILTER_VALIDATE_FLOAT);
+    $discount = filter_input(INPUT_POST, 'discount', FILTER_VALIDATE_FLOAT);
+    $tax = filter_input(INPUT_POST, 'tax', FILTER_VALIDATE_FLOAT);
     $adminNotes = trim($_POST['admin_notes'] ?? '');
-    $isSwapIncluded = isset($_POST['is_swap_included']) ? 1 : 0;
-    $isRelocationIncluded = isset($_POST['is_relocation_included']) ? 1 : 0;
+    $attachmentPath = null;
 
-
-    // Set to 0.00 if null or empty after filtering
-    $dailyRate = $dailyRate ?? 0.00;
-    $swapCharge = $swapCharge ?? 0.00;
-    $relocationCharge = $relocationCharge ?? 0.00;
-
+    if (!$quoteId) {
+        throw new Exception('A valid Quote ID is required.');
+    }
+    
     if ($quotedPrice === false || $quotedPrice <= 0) {
         throw new Exception('A valid main quoted price is required.');
     }
+    
+    // Handle file upload
+    if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == UPLOAD_ERR_OK) {
+        $uploadDir = __DIR__ . '/../../uploads/quote_attachments/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+        $fileName = time() . '_' . basename($_FILES['attachment']['name']);
+        $uploadFile = $uploadDir . $fileName;
+
+        if (move_uploaded_file($_FILES['attachment']['tmp_name'], $uploadFile)) {
+            $attachmentPath = '/uploads/quote_attachments/' . $fileName;
+        } else {
+            throw new Exception('Failed to move uploaded file.');
+        }
+    }
+
 
     $conn->begin_transaction();
 
@@ -101,9 +106,10 @@ function handleSubmitQuote($conn, $quoteId) {
     $stmt_fetch->close();
     if (!$quote_user_data) throw new Exception('User for the quote not found.');
 
-    // 1. Update the quote in the database, now including the new charge and inclusion fields.
-    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, daily_rate = ?, swap_charge = ?, relocation_charge = ?, admin_notes = ?, is_swap_included = ?, is_relocation_included = ? WHERE id = ?");
-    $stmt_update->bind_param("ddddsiis", $quotedPrice, $dailyRate, $swapCharge, $relocationCharge, $adminNotes, $isSwapIncluded, $isRelocationIncluded, $quoteId);
+    // 1. Update the quote in the database
+    $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, discount = ?, tax = ?, admin_notes = ?, attachment_path = ? WHERE id = ?");
+    $stmt_update->bind_param("dddssi", $quotedPrice, $discount, $tax, $adminNotes, $attachmentPath, $quoteId);
+
     $stmt_update->execute();
     $stmt_update->close();
 
@@ -112,7 +118,7 @@ function handleSubmitQuote($conn, $quoteId) {
     $template_vars = [
         'template_companyName' => getSystemSetting('company_name') ?? 'CAT Dump',
         'template_quoteId' => $quoteId,
-        'template_quotedPrice' => number_format($quotedPrice, 2),
+        'template_quotedPrice' => number_format($quotedPrice - $discount + $tax, 2),
         'template_adminNotes' => $adminNotes,
         'template_customerQuoteLink' => "https://{$_SERVER['HTTP_HOST']}/customer/dashboard.php#quotes?quote_id={$quoteId}"
     ];
@@ -207,6 +213,37 @@ function handleResendQuote($conn, $quoteId) {
         echo json_encode(['success' => true, 'message' => 'Quote resent successfully!']);
     } else {
         throw new Exception('Failed to resend email notification.');
+    }
+}
+
+/**
+ * Deletes multiple quotes in bulk.
+ */
+function handleDeleteBulk($conn) {
+    $quote_ids = $_POST['quote_ids'] ?? [];
+    if (empty($quote_ids) || !is_array($quote_ids)) {
+        throw new Exception("No quote IDs provided for bulk deletion.");
+    }
+
+    $conn->begin_transaction();
+
+    try {
+        $placeholders = implode(',', array_fill(0, count($quote_ids), '?'));
+        $types = str_repeat('i', count($quote_ids));
+        
+        $stmt = $conn->prepare("DELETE FROM quotes WHERE id IN ($placeholders)");
+        $stmt->bind_param($types, ...$quote_ids);
+        
+        if ($stmt->execute()) {
+            $conn->commit();
+            echo json_encode(['success' => true, 'message' => 'Selected quotes have been deleted.']);
+        } else {
+            throw new Exception("Failed to delete quotes.");
+        }
+        $stmt->close();
+    } catch (Exception $e) {
+        $conn->rollback();
+        throw $e; // Re-throw the exception to be caught by the main handler
     }
 }
 

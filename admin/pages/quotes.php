@@ -24,6 +24,7 @@ if ($requested_quote_id) {
             q.id, q.service_type, q.status, q.created_at, q.location, q.quoted_price, q.customer_type,
             q.delivery_date, q.delivery_time, q.removal_date, q.removal_time, q.is_urgent, q.live_load_needed,
             q.swap_charge, q.relocation_charge, q.admin_notes, q.quote_details, q.driver_instructions,
+            q.discount, q.tax, q.attachment_path,
             u.first_name, u.last_name, u.email, u.phone_number
         FROM quotes q
         JOIN users u ON q.user_id = u.id
@@ -34,6 +35,12 @@ if ($requested_quote_id) {
     $result = $stmt_detail->get_result();
     if ($result->num_rows > 0) {
         $quote_detail_view_data = $result->fetch_assoc();
+        $quote_detail_view_data['is_viewed_by_admin'] = true; // Mark as viewed
+        $stmt_mark_viewed = $conn->prepare("UPDATE quotes SET is_viewed_by_admin = 1 WHERE id = ?");
+        $stmt_mark_viewed->bind_param("i", $requested_quote_id);
+        $stmt_mark_viewed->execute();
+        $stmt_mark_viewed->close();
+
 
         // Fetch related details based on service type
         if ($quote_detail_view_data['service_type'] === 'equipment_rental') {
@@ -50,7 +57,7 @@ if ($requested_quote_id) {
             $stmt_junk = $conn->prepare("SELECT junk_items_json, recommended_dumpster_size, additional_comment, media_urls_json FROM junk_removal_details WHERE quote_id = ?");
             $stmt_junk->bind_param("i", $requested_quote_id);
             $stmt_junk->execute();
-            $junk_result = $junk_result->get_result()->fetch_assoc();
+            $junk_result = $stmt_junk->get_result()->fetch_assoc();
             if($junk_result) {
                 $quote_detail_view_data['junk_details'] = $junk_result;
                 $quote_detail_view_data['junk_details']['junk_items_json'] = json_decode($junk_result['junk_items_json'] ?? '[]', true);
@@ -103,7 +110,12 @@ function getAdminStatusBadgeClass($status) {
 <div id="quotes-list-section" class="<?php echo $quote_detail_view_data ? 'hidden' : ''; ?>">
     <h1 class="text-3xl font-bold text-gray-800 mb-8">Quote Management</h1>
     <div class="bg-white p-6 rounded-lg shadow-md border border-blue-200">
-        <h2 class="text-xl font-semibold text-gray-700 mb-4"><i class="fas fa-file-invoice mr-2 text-blue-600"></i>All Customer Quotes</h2>
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold text-gray-700"><i class="fas fa-file-invoice mr-2 text-blue-600"></i>All Customer Quotes</h2>
+            <button id="bulk-delete-quotes-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 shadow-md hidden">
+                <i class="fas fa-trash-alt mr-2"></i>Delete Selected
+            </button>
+        </div>
         <?php if (empty($quotes)): ?>
             <p class="text-gray-600 text-center p-4">No quote requests found.</p>
         <?php else: ?>
@@ -111,6 +123,9 @@ function getAdminStatusBadgeClass($status) {
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-blue-50">
                         <tr>
+                            <th scope="col" class="px-6 py-3 text-left">
+                                <input type="checkbox" id="select-all-quotes" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                            </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Quote ID</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Customer</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Status</th>
@@ -121,6 +136,9 @@ function getAdminStatusBadgeClass($status) {
                     <tbody class="bg-white divide-y divide-gray-200">
                         <?php foreach ($quotes as $quote): ?>
                             <tr>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <input type="checkbox" class="quote-checkbox h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" value="<?php echo htmlspecialchars($quote['id']); ?>">
+                                </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#Q<?php echo htmlspecialchars($quote['id']); ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars($quote['first_name'] . ' ' . $quote['last_name']); ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap">
@@ -150,7 +168,12 @@ function getAdminStatusBadgeClass($status) {
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-2">
                 <div class="bg-white p-6 rounded-lg shadow-md border border-blue-200">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-4">Quote #Q<?php echo htmlspecialchars($quote_detail_view_data['id']); ?> Details</h2>
+                    <div class="flex justify-between items-start">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4">Quote #Q<?php echo htmlspecialchars($quote_detail_view_data['id']); ?> Details</h2>
+                        <a href="/api/admin/download.php?type=quote&id=<?php echo htmlspecialchars($quote_detail_view_data['id']); ?>" target="_blank" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm">
+                            <i class="fas fa-file-pdf mr-2"></i>Download PDF
+                        </a>
+                    </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700 mb-6 pb-4 border-b">
                         <div>
                             <p><strong>Customer:</strong> <?php echo htmlspecialchars($quote_detail_view_data['first_name'] . ' ' . $quote_detail_view_data['last_name']); ?></p>
@@ -189,25 +212,27 @@ function getAdminStatusBadgeClass($status) {
                 <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200 sticky top-24">
                     <h3 class="text-xl font-bold text-gray-800 mb-4">Actions</h3>
                     <?php if ($quote_detail_view_data['status'] === 'pending'): ?>
-                        <form id="submit-quote-form">
+                        <form id="submit-quote-form" enctype="multipart/form-data">
                             <input type="hidden" name="quote_id" value="<?php echo htmlspecialchars($quote_detail_view_data['id']); ?>">
                             <div class="mb-4">
-                                <label for="quote-price" class="block text-sm font-medium text-gray-700">Main Quoted Price ($)</label>
+                                <label for="quote-price" class="block text-sm font-medium text-gray-700">Base Price ($)</label>
                                 <input type="number" id="quote-price" name="quoted_price" step="0.01" min="0" class="mt-1 p-2 border border-gray-300 rounded-md w-full" required>
                             </div>
-                            <div class="mb-4">
-                                <label for="daily-rate" class="block text-sm font-medium text-gray-700">Daily Rate (for extensions)</label>
-                                <input type="number" id="daily-rate" name="daily_rate" step="0.01" min="0" placeholder="e.g., 25.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
+                             <div class="mb-4">
+                                <label for="discount" class="block text-sm font-medium text-gray-700">Discount ($)</label>
+                                <input type="number" id="discount" name="discount" step="0.01" min="0" placeholder="e.g., 50.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
                             </div>
-                            <div class="grid grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <label for="swap-charge" class="block text-sm font-medium text-gray-700">Swap Charge ($)</label>
-                                    <input type="number" id="swap-charge" name="swap_charge" step="0.01" min="0" placeholder="e.g., 30.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
-                                </div>
-                                <div>
-                                    <label for="relocation-charge" class="block text-sm font-medium text-gray-700">Relocation Charge ($)</label>
-                                    <input type="number" id="relocation-charge" name="relocation_charge" step="0.01" min="0" placeholder="e.g., 40.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
-                                </div>
+                             <div class="mb-4">
+                                <label for="tax" class="block text-sm font-medium text-gray-700">Tax ($)</label>
+                                <input type="number" id="tax" name="tax" step="0.01" min="0" placeholder="e.g., 15.00" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
+                            </div>
+                             <div class="mb-4">
+                                <label for="attachment" class="block text-sm font-medium text-gray-700">Attach File (Optional)</label>
+                                <input type="file" id="attachment" name="attachment" class="mt-1 p-2 border border-gray-300 rounded-md w-full text-sm">
+                            </div>
+                             <div class="mb-4">
+                                <label for="admin_notes" class="block text-sm font-medium text-gray-700">Admin Notes</label>
+                                <textarea id="admin_notes" name="admin_notes" rows="3" class="mt-1 p-2 border border-gray-300 rounded-md w-full"></textarea>
                             </div>
                             <div class="flex justify-end">
                                 <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">Submit Quote</button>
@@ -235,6 +260,63 @@ function getAdminStatusBadgeClass($status) {
 (function() {
     const contentArea = document.getElementById('main-content-area');
     if (!contentArea) return;
+
+    const selectAllCheckbox = document.getElementById('select-all-quotes');
+    const quoteCheckboxes = document.querySelectorAll('.quote-checkbox');
+    const bulkDeleteBtn = document.getElementById('bulk-delete-quotes-btn');
+
+    function toggleBulkDeleteButton() {
+        const selectedCount = document.querySelectorAll('.quote-checkbox:checked').length;
+        if (selectedCount > 0) {
+            bulkDeleteBtn.classList.remove('hidden');
+        } else {
+            bulkDeleteBtn.classList.add('hidden');
+        }
+    }
+
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            quoteCheckboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+            toggleBulkDeleteButton();
+        });
+    }
+
+    quoteCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            if (!this.checked) {
+                selectAllCheckbox.checked = false;
+            }
+            toggleBulkDeleteButton();
+        });
+    });
+    
+    if (bulkDeleteBtn) {
+        bulkDeleteBtn.addEventListener('click', function() {
+            const selectedIds = Array.from(document.querySelectorAll('.quote-checkbox:checked')).map(cb => cb.value);
+            if (selectedIds.length === 0) {
+                showToast('Please select at least one quote to delete.', 'warning');
+                return;
+            }
+
+            showConfirmationModal(
+                'Delete Selected Quotes',
+                `Are you sure you want to delete ${selectedIds.length} selected quote(s)? This action cannot be undone.`,
+                async (confirmed) => {
+                    if (confirmed) {
+                        const formData = new FormData();
+                        formData.append('action', 'delete_bulk');
+                        selectedIds.forEach(id => formData.append('quote_ids[]', id));
+                        
+                        await handleQuoteAction(formData);
+                    }
+                },
+                'Delete Selected', 'bg-red-600'
+            );
+        });
+    }
+
 
     contentArea.addEventListener('click', function(event) {
         const target = event.target.closest('button');
