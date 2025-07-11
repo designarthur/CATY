@@ -61,7 +61,10 @@ if ($requested_booking_id) {
         $booking_detail_view_data['equipment_details'] = json_decode($booking_detail_view_data['equipment_details'] ?? '[]', true);
         $booking_detail_view_data['junk_details'] = json_decode($booking_detail_view_data['junk_details'] ?? '{}', true);
 
-        if ($booking_detail_view_data && in_array($booking_detail_view_data['status'], ['delivered', 'in_use', 'awaiting_pickup']) && !empty($booking_detail_view_data['end_date'])) {
+        // Safely calculate remaining days, handling potential NULL end_date
+        if ($booking_detail_view_data && 
+            in_array($booking_detail_view_data['status'], ['delivered', 'in_use', 'awaiting_pickup']) && 
+            !empty($booking_detail_view_data['end_date'])) { // The !empty check prevents processing if it's null or empty string
              try {
                 $endDate = new DateTime($booking_detail_view_data['end_date']);
                 $today = new DateTime('today');
@@ -72,8 +75,12 @@ if ($requested_booking_id) {
                     $booking_detail_view_data['remaining_days'] = 0;
                 }
             } catch (Exception $e) {
+                // Log the exception if needed, and set a fallback
+                error_log("DateTime conversion error for booking ID {$requested_booking_id}: {$e->getMessage()}");
                 $booking_detail_view_data['remaining_days'] = 'N/A';
             }
+        } else {
+            $booking_detail_view_data['remaining_days'] = 'N/A'; // No remaining days if status is not applicable or end_date is missing
         }
     }
     $stmt_detail->close();
@@ -207,8 +214,8 @@ function getAdminStatusBadgeClass($status) {
                 <p class="text-gray-600"><span class="font-medium">Service Type:</span> <?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $booking_detail_view_data['service_type']))); ?></p>
                 <p class="text-gray-600"><span class="font-medium">Current Status:</span> <span class="px-2 py-1 rounded-full text-xs font-semibold <?php echo getAdminStatusBadgeClass($booking_detail_view_data['status']); ?>"><?php echo htmlspecialchars(strtoupper(str_replace('_', ' ', $booking_detail_view_data['status']))); ?></span></p>
                 <p class="text-gray-600"><span class="font-medium">Start Date:</span> <?php echo htmlspecialchars($booking_detail_view_data['start_date']); ?></p>
-                 <p class="text-gray-600"><span class="font-medium">End Date:</span> <?php echo htmlspecialchars($booking_detail_view_data['end_date']); ?>
-                    <?php if (isset($booking_detail_view_data['remaining_days'])): ?>
+                 <p class="text-gray-600"><span class="font-medium">End Date:</span> <?php echo htmlspecialchars($booking_detail_view_data['end_date'] ?? 'N/A'); ?>
+                    <?php if (isset($booking_detail_view_data['remaining_days']) && $booking_detail_view_data['remaining_days'] !== 'N/A'): // Only show if remaining_days is calculated and not 'N/A' ?>
                         <span class="font-bold <?php echo $booking_detail_view_data['remaining_days'] < 3 ? 'text-red-500' : 'text-green-500'; ?>">
                             (<?php echo $booking_detail_view_data['remaining_days']; ?> days remaining)
                         </span>
