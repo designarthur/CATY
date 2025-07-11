@@ -45,6 +45,11 @@
             </div>
             <div id="ai-chat-messages" class="flex-1 overflow-y-auto border border-gray-300 rounded-lg p-4 mb-4 custom-scroll">
                 </div>
+            <div id="ai-chat-file-upload-section" class="hidden mb-4 p-3 border border-gray-300 rounded-lg bg-gray-50">
+                <label for="ai-chat-file-input" class="block text-sm font-medium text-gray-700 mb-2">Attach Files (Images/Videos for Junk Removal)</label>
+                <input type="file" id="ai-chat-file-input" name="media_files[]" multiple class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                <div id="ai-chat-selected-files" class="mt-2 text-xs text-gray-600"></div>
+            </div>
             <div class="flex">
                 <input type="text" id="ai-chat-input" placeholder="Type your message..." class="flex-1 p-3 border border-gray-300 rounded-l-lg focus:ring-blue-500 focus:border-blue-500">
                 <button id="ai-chat-send-btn" class="px-4 py-3 bg-blue-600 text-white rounded-r-lg hover:bg-blue-700 transition-colors duration-200">Send</button>
