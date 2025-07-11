@@ -131,6 +131,11 @@ function getAdminStatusBadgeClass($status) {
         case 'awaiting_pickup': return 'bg-pink-100 text-pink-800';
         case 'completed': return 'bg-gray-100 text-gray-800';
         case 'cancelled': return 'bg-red-100 text-red-800';
+        case 'relocation_requested': return 'bg-orange-100 text-orange-800'; // New status
+        case 'swap_requested': return 'bg-fuchsia-100 text-fuchsia-800';   // New status
+        case 'relocated': return 'bg-lime-100 text-lime-800';             // New status
+        case 'swapped': return 'bg-emerald-100 text-emerald-800';         // New status
+        case 'extended': return 'bg-cyan-100 text-cyan-800';              // New status (from functions.php)
         default: return 'bg-gray-100 text-gray-700';
     }
 }
@@ -148,8 +153,14 @@ function getAdminStatusBadgeClass($status) {
         <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'assigned' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'assigned'})">Assigned</button>
         <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'out_for_delivery' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'out_for_delivery'})">Out for Delivery</button>
         <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'delivered' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'delivered'})">Delivered</button>
+        <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'in_use' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'in_use'})">In Use</button>
+        <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'awaiting_pickup' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'awaiting_pickup'})">Awaiting Pickup</button>
         <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'completed' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'completed'})">Completed</button>
         <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'cancelled' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'cancelled'})">Cancelled</button>
+        <!-- New filter buttons for specific requests -->
+        <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'relocation_requested' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'relocation_requested'})">Relocation Req.</button>
+        <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'swap_requested' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'swap_requested'})">Swap Req.</button>
+        <button class="px-4 py-2 rounded-lg text-sm font-medium <?php echo $filter_status === 'extended' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?>" onclick="loadAdminSection('bookings', {status: 'extended'})">Extended</button>
     </div>
 
     <?php if (empty($bookings)): ?>
@@ -229,7 +240,7 @@ function getAdminStatusBadgeClass($status) {
             <div>
                 <label for="booking-status-select" class="block text-sm font-medium text-gray-700 mb-2">Update Status</label>
                 <select id="booking-status-select" class="mt-1 p-2 border border-gray-300 rounded-md w-full">
-                     <option value="pending" <?php echo ($booking_detail_view_data['status'] === 'pending') ? 'selected' : ''; ?>>Pending</option>
+                    <option value="pending" <?php echo ($booking_detail_view_data['status'] === 'pending') ? 'selected' : ''; ?>>Pending</option>
                     <option value="scheduled" <?php echo ($booking_detail_view_data['status'] === 'scheduled') ? 'selected' : ''; ?>>Scheduled</option>
                     <option value="assigned" <?php echo ($booking_detail_view_data['status'] === 'assigned') ? 'selected' : ''; ?>>Assigned</option>
                     <option value="out_for_delivery" <?php echo ($booking_detail_view_data['status'] === 'out_for_delivery') ? 'selected' : ''; ?>>Out for Delivery</option>
@@ -238,6 +249,12 @@ function getAdminStatusBadgeClass($status) {
                     <option value="awaiting_pickup" <?php echo ($booking_detail_view_data['status'] === 'awaiting_pickup') ? 'selected' : ''; ?>>Awaiting Pickup</option>
                     <option value="completed" <?php echo ($booking_detail_view_data['status'] === 'completed') ? 'selected' : ''; ?>>Completed</option>
                     <option value="cancelled" <?php echo ($booking_detail_view_data['status'] === 'cancelled') ? 'selected' : ''; ?>>Cancelled</option>
+                    <!-- New statuses for admin to set -->
+                    <option value="relocation_requested" <?php echo ($booking_detail_view_data['status'] === 'relocation_requested') ? 'selected' : ''; ?>>Relocation Requested</option>
+                    <option value="swap_requested" <?php echo ($booking_detail_view_data['status'] === 'swap_requested') ? 'selected' : ''; ?>>Swap Requested</option>
+                    <option value="relocated" <?php echo ($booking_detail_view_data['status'] === 'relocated') ? 'selected' : ''; ?>>Relocated</option>
+                    <option value="swapped" <?php echo ($booking_detail_view_data['status'] === 'swapped') ? 'selected' : ''; ?>>Swapped</option>
+                    <option value="extended" <?php echo ($booking_detail_view_data['status'] === 'extended') ? 'selected' : ''; ?>>Extended</option>
                 </select>
                 <button class="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200" id="update-booking-status-btn" data-id="<?php echo htmlspecialchars($booking_detail_view_data['id']); ?>">Update Status</button>
             </div>

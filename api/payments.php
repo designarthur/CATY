@@ -149,16 +149,18 @@ try {
     }
     $stmt_update_invoice->close();
 
-    // 5. Check if this payment is for an extension or a new booking.
+    // 5. Check if this payment is for an extension, relocation, swap, or a new booking.
     $final_booking_id = null;
-    $is_extension = strpos($invoiceNumber, 'INV-EXT-') === 0;
+    $is_extension_invoice = strpos($invoiceNumber, 'INV-EXT-') === 0;
+    $is_relocation_invoice = strpos($invoiceNumber, 'INV-REL-') === 0;
+    $is_swap_invoice = strpos($invoiceNumber, 'INV-SWA-') === 0;
 
-    if ($is_extension && $booking_id_from_invoice) {
+    if ($is_extension_invoice && $booking_id_from_invoice) {
         // --- THIS IS A RENTAL EXTENSION PAYMENT ---
         $final_booking_id = $booking_id_from_invoice;
 
         // Get the requested extension days
-        $stmt_ext = $conn->prepare("SELECT requested_days FROM booking_extension_requests WHERE invoice_id = ?");
+        $stmt_ext = $conn->prepare("SELECT requested_days FROM booking_extension_requests WHERE invoice_id = ? AND status = 'approved'");
         $stmt_ext->bind_param("i", $invoice_id);
         $stmt_ext->execute();
         $ext_data = $stmt_ext->get_result()->fetch_assoc();
@@ -170,7 +172,33 @@ try {
             $stmt_update_end_date->bind_param("ii", $ext_data['requested_days'], $final_booking_id);
             $stmt_update_end_date->execute();
             $stmt_update_end_date->close();
+
+            // Log the status history for the extension payment
+            $notes = "Booking extended by {$ext_data['requested_days']} days due to paid invoice #{$invoiceNumber}.";
+            $stmt_log_ext = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, 'extended', ?)");
+            $stmt_log_ext->bind_param("is", $final_booking_id, $notes);
+            $stmt_log_ext->execute();
+            $stmt_log_ext->close();
         }
+
+    } elseif (($is_relocation_invoice || $is_swap_invoice) && $booking_id_from_invoice) {
+        // --- THIS IS A RELOCATION OR SWAP SERVICE PAYMENT ---
+        $final_booking_id = $booking_id_from_invoice;
+        $new_booking_status = $is_relocation_invoice ? 'relocated' : 'swapped';
+        $service_name = $is_relocation_invoice ? 'Relocation' : 'Swap';
+
+        // Update the booking status to 'relocated' or 'swapped'
+        $stmt_update_booking_status = $conn->prepare("UPDATE bookings SET status = ? WHERE id = ?");
+        $stmt_update_booking_status->bind_param("si", $new_booking_status, $final_booking_id);
+        $stmt_update_booking_status->execute();
+        $stmt_update_booking_status->close();
+
+        // Log the status history
+        $notes = "{$service_name} service paid via invoice #{$invoiceNumber}. Booking status updated to '{$new_booking_status}'.";
+        $stmt_log_service = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, ?, ?)");
+        $stmt_log_service->bind_param("iss", $final_booking_id, $new_booking_status, $notes);
+        $stmt_log_service->execute();
+        $stmt_log_service->close();
 
     } elseif ($quote_id) {
         // --- THIS IS A NEW BOOKING FROM A QUOTE ---
@@ -179,8 +207,9 @@ try {
             throw new Exception("Booking could not be created after successful payment.");
         }
     } else {
-        // This is some other type of charge (e.g., relocation, swap) that doesn't create a new booking.
-        $final_booking_id = $booking_id_from_invoice;
+        // This is some other type of charge that doesn't create a new booking or update an existing one's core status.
+        // It might be a manual charge added by admin.
+        $final_booking_id = $booking_id_from_invoice; // Keep the existing booking ID if present
     }
 
 
@@ -199,4 +228,3 @@ try {
 }
 
 $conn->close();
-?>

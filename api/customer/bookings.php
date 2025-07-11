@@ -82,6 +82,8 @@ function handleServiceRequest($conn, $serviceType) {
     $charge_column = ($serviceType === 'relocation') ? 'relocation_charge' : 'swap_charge';
     $included_column = ($serviceType === 'relocation') ? 'is_relocation_included' : 'is_swap_included';
     $service_name = ucwords($serviceType); // For messages (e.g., "Relocation", "Swap")
+    $booking_status_requested = $serviceType . '_requested'; // e.g., 'relocation_requested'
+    $booking_status_completed = ($serviceType === 'relocation') ? 'relocated' : 'swapped'; // Final status
 
     $conn->begin_transaction();
 
@@ -108,11 +110,16 @@ function handleServiceRequest($conn, $serviceType) {
 
         // Scenario A: Service is pre-paid/included (or has no charge)
         if ($is_included || $charge_amount <= 0) {
-            // Log the request and notify admin to schedule it
-            $notes = "Customer initiated {$service_name} request. This service is included in the original quote or has no charge.";
+            // Update booking status to 'relocated' or 'swapped' directly
+            $stmt_update_booking_status = $conn->prepare("UPDATE bookings SET status = ? WHERE id = ?");
+            $stmt_update_booking_status->bind_param("si", $booking_status_completed, $booking_id);
+            $stmt_update_booking_status->execute();
+            $stmt_update_booking_status->close();
+
+            $notes = "Customer initiated {$service_name} request. This service is included in the original quote or has no charge. Status updated to {$booking_status_completed}.";
             if ($serviceType === 'relocation') {
                 $notes .= " New address: {$new_address}";
-                // You might want to update the booking's delivery_location here or have admin confirm it first
+                // Update the booking's delivery_location
                 $stmt_update_booking_location = $conn->prepare("UPDATE bookings SET delivery_location = ? WHERE id = ?");
                 $stmt_update_booking_location->bind_param("si", $new_address, $booking_id);
                 $stmt_update_booking_location->execute();
@@ -120,8 +127,7 @@ function handleServiceRequest($conn, $serviceType) {
             }
             
             $stmt_log = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, ?, ?)");
-            $status_log = $serviceType . '_requested'; // e.g., 'relocation_requested'
-            $stmt_log->bind_param("iss", $booking_id, $status_log, $notes);
+            $stmt_log->bind_param("iss", $booking_id, $booking_status_completed, $notes);
             $stmt_log->execute();
             $stmt_log->close();
 
@@ -149,6 +155,18 @@ function handleServiceRequest($conn, $serviceType) {
         }
 
         // Scenario B: Service requires payment (charge_amount > 0 and not included)
+        // First, update booking status to 'relocation_requested' or 'swap_requested'
+        $stmt_update_booking_status = $conn->prepare("UPDATE bookings SET status = ? WHERE id = ?");
+        $stmt_update_booking_status->bind_param("si", $booking_status_requested, $booking_id);
+        $stmt_update_booking_status->execute();
+        $stmt_update_booking_status->close();
+
+        // Log the status history for the request
+        $notes = "Customer requested {$service_name} for Booking #{$quote_data['booking_number']}. Payment required. Status updated to {$booking_status_requested}.";
+        $stmt_log = $conn->prepare("INSERT INTO booking_status_history (booking_id, status, notes) VALUES (?, ?, ?)");
+        $stmt_log->bind_param("iss", $booking_id, $booking_status_requested, $notes);
+        $stmt_log->execute();
+        $stmt_log->close();
         
         // Create a new invoice for this service request
         $invoice_number = 'INV-' . strtoupper(substr($serviceType, 0, 3)) . '-' . generateToken(6);
@@ -181,6 +199,16 @@ function handleServiceRequest($conn, $serviceType) {
         $stmt_notify->bind_param("iss", $user_id, $notification_message, $notification_link);
         $stmt_notify->execute();
         $stmt_notify->close();
+
+        // Notify Admin about the new service request requiring payment
+        $admin_notification_message = "Customer requested {$service_name} for Booking #{$quote_data['booking_number']}. Payment of $" . number_format($charge_amount, 2) . " required.";
+        $admin_notification_link = "bookings?booking_id={$booking_id}";
+        $admin_id = 1; // Assuming admin user_id is 1
+        $stmt_admin_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'system_message', ?, ?)");
+        $stmt_admin_notify->bind_param("iss", $admin_id, $admin_notification_message, $admin_notification_link);
+        $stmt_admin_notify->execute();
+        $stmt_admin_notify->close();
+
 
         $conn->commit();
         
