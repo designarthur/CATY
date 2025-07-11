@@ -11,6 +11,7 @@ error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_STRICT);
 session_start();
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/session.php'; // For is_logged_in() and $_SESSION['user_id']
+// Removed Braintree requirement: require_once __DIR__ . '/../../vendor/autoload.php'; 
 
 header('Content-Type: application/json');
 
@@ -24,16 +25,33 @@ $user_id = $_SESSION['user_id'];
 $request_method = $_SERVER['REQUEST_METHOD'];
 $action = $_REQUEST['action'] ?? ''; // Use $_REQUEST to handle both GET and POST
 
+// Removed Braintree Gateway initialization
+/*
+try {
+    $gateway = new Braintree\Gateway([
+        'environment' => $_ENV['BRAINTREE_ENVIRONMENT'] ?? 'sandbox',
+        'merchantId'  => $_ENV['BRAINTREE_MERCHANT_ID'],
+        'publicKey'   => $_ENV['BRAINTREE_PUBLIC_KEY'],
+        'privateKey'  => $_ENV['BRAINTREE_PRIVATE_KEY']
+    ]);
+} catch (Exception $e) {
+    error_log("Braintree Gateway initialization failed: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'Payment system configuration error.']);
+    exit;
+}
+*/
+
+
 if ($request_method === 'POST') {
     switch ($action) {
         case 'add_method':
-            handleAddPaymentMethod($conn, $user_id);
+            handleAddPaymentMethod($conn, $user_id); // Removed $gateway parameter
             break;
         case 'set_default':
             handleSetDefaultPaymentMethod($conn, $user_id);
             break;
         case 'delete_method':
-            handleDeletePaymentMethod($conn, $user_id);
+            handleDeletePaymentMethod($conn, $user_id); // Removed $gateway parameter
             break;
         case 'update_method':
             handleUpdatePaymentMethod($conn, $user_id);
@@ -47,6 +65,9 @@ if ($request_method === 'POST') {
         case 'get_default_method':
             handleGetDefaultMethod($conn, $user_id);
             break;
+        case 'get_client_token': // This action is no longer needed without Braintree client-side SDK
+            echo json_encode(['success' => false, 'message' => 'Client token functionality is disabled.']);
+            break;
         default:
             echo json_encode(['success' => false, 'message' => 'Invalid GET action.']);
             break;
@@ -57,7 +78,7 @@ if ($request_method === 'POST') {
 
 $conn->close();
 
-function handleAddPaymentMethod($conn, $user_id) {
+function handleAddPaymentMethod($conn, $user_id) { // Removed $gateway parameter
     $cardholderName = trim($_POST['cardholder_name'] ?? '');
     $cardNumber = trim(str_replace(' ', '', $_POST['card_number'] ?? ''));
     $expiryDate = trim($_POST['expiry_date'] ?? '');
@@ -88,12 +109,14 @@ function handleAddPaymentMethod($conn, $user_id) {
         return;
     }
 
-    $braintreeToken = 'token_' . uniqid() . substr($cardNumber, -4);
+    // --- Manual Card Type Detection (Simplified) ---
     $firstDigit = substr($cardNumber, 0, 1);
     $cardType = 'Unknown';
     if ($firstDigit == '4') $cardType = 'Visa';
     elseif ($firstDigit == '5') $cardType = 'MasterCard';
     elseif ($firstDigit == '3') $cardType = 'Amex';
+    elseif ($firstDigit == '6') $cardType = 'Discover'; // Added Discover
+    // You can add more card types as needed
 
     $lastFour = substr($cardNumber, -4);
 
@@ -106,8 +129,12 @@ function handleAddPaymentMethod($conn, $user_id) {
             $stmt_unset_default->close();
         }
 
+        // Removed Braintree payment method creation
+        // Instead of Braintree token, generate a simple unique token for internal use
+        $internalToken = 'local_' . uniqid() . substr($cardNumber, -4);
+
         $stmt_insert = $conn->prepare("INSERT INTO user_payment_methods (user_id, braintree_payment_token, card_type, last_four, expiration_month, expiration_year, cardholder_name, is_default, billing_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt_insert->bind_param("issssssis", $user_id, $braintreeToken, $cardType, $lastFour, $expMonth, $expYear, $cardholderName, $setDefault, $billingAddress);
+        $stmt_insert->bind_param("issssssis", $user_id, $internalToken, $cardType, $lastFour, $expMonth, $expYear, $cardholderName, $setDefault, $billingAddress);
 
         if ($stmt_insert->execute()) {
             $conn->commit();
@@ -119,7 +146,7 @@ function handleAddPaymentMethod($conn, $user_id) {
     } catch (Exception $e) {
         $conn->rollback();
         error_log("Add payment method failed: " . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Failed to add payment method.']);
+        echo json_encode(['success' => false, 'message' => 'Failed to add payment method: ' . $e->getMessage()]);
     }
 }
 
@@ -153,7 +180,7 @@ function handleSetDefaultPaymentMethod($conn, $user_id) {
     }
 }
 
-function handleDeletePaymentMethod($conn, $user_id) {
+function handleDeletePaymentMethod($conn, $user_id) { // Removed $gateway parameter
     $methodId = $_POST['id'] ?? null;
     if (empty($methodId)) {
         echo json_encode(['success' => false, 'message' => 'Payment method ID required.']);
@@ -162,22 +189,36 @@ function handleDeletePaymentMethod($conn, $user_id) {
 
     $conn->begin_transaction();
     try {
-        $stmt_check = $conn->prepare("SELECT is_default FROM user_payment_methods WHERE id = ? AND user_id = ?");
+        $stmt_check = $conn->prepare("SELECT braintree_payment_token, is_default FROM user_payment_methods WHERE id = ? AND user_id = ?");
         $stmt_check->bind_param("ii", $methodId, $user_id);
         $stmt_check->execute();
         $method = $stmt_check->get_result()->fetch_assoc();
         $stmt_check->close();
 
-        if ($method && $method['is_default']) {
+        if (!$method) {
+            throw new Exception("Payment method not found or you don't have permission to delete it.");
+        }
+
+        if ($method['is_default']) {
             $stmt_count = $conn->prepare("SELECT COUNT(*) FROM user_payment_methods WHERE user_id = ?");
             $stmt_count->bind_param("i", $user_id);
             $stmt_count->execute();
             $count = $stmt_count->get_result()->fetch_row()[0];
             $stmt_count->close();
             if ($count <= 1) {
-                throw new Exception("Cannot delete the only default payment method.");
+                throw new Exception("Cannot delete the only default payment method. Please add another method first or contact support.");
             }
         }
+
+        // Removed Braintree payment method deletion:
+        /*
+        $braintreeToken = $method['braintree_payment_token'];
+        $result = $gateway->paymentMethod()->delete($braintreeToken);
+
+        if (!$result->success) {
+            throw new Exception("Failed to delete payment method from Braintree: " . $result->message);
+        }
+        */
 
         $stmt_delete = $conn->prepare("DELETE FROM user_payment_methods WHERE id = ? AND user_id = ?");
         $stmt_delete->bind_param("ii", $methodId, $user_id);
@@ -185,7 +226,7 @@ function handleDeletePaymentMethod($conn, $user_id) {
             $conn->commit();
             echo json_encode(['success' => true, 'message' => 'Payment method deleted.']);
         } else {
-            throw new Exception("Payment method not found or failed to delete.");
+            throw new Exception("Payment method not found in DB or failed to delete.");
         }
         $stmt_delete->close();
     } catch (Exception $e) {
@@ -257,4 +298,16 @@ function handleGetDefaultMethod($conn, $user_id) {
         echo json_encode(['success' => false, 'message' => 'No default payment method found.']);
     }
 }
-?>
+
+// Removed handleGetClientToken function
+/*
+function handleGetClientToken($gateway) {
+    try {
+        $clientToken = $gateway->clientToken()->generate();
+        echo json_encode(['success' => true, 'client_token' => $clientToken->token]);
+    } catch (Exception $e) {
+        error_log("Failed to generate Braintree client token: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to retrieve payment client token.']);
+    }
+}
+*/

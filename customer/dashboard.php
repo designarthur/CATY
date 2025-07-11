@@ -88,7 +88,7 @@ $pending_quotes_count = $result_pending_quotes->num_rows;
 
 // Store pending quotes for display on dashboard
 while ($row = $result_pending_quotes->fetch_assoc()) {
-    // FIX: Add null coalescing for json_decode to prevent deprecation warnings
+    // Add null coalescing for json_decode to prevent deprecation warnings
     $quote_details = json_decode($row['quote_details'] ?? '{}', true);
     $item_desc = 'N/A';
     if ($row['service_type'] == 'equipment_rental' && isset($quote_details['equipment_types'])) {
@@ -228,6 +228,54 @@ $conn->close();
         .toast.bg-error { background-color: #ef4444; } /* Red */
         .toast.bg-info { background-color: #3b82f6; } /* Blue */
         .toast.bg-warning { background-color: #f59e0b; } /* Orange */
+
+        /* AI Chat Modal Specific Styles */
+        #ai-chat-modal .chat-bubble {
+            padding: 0.75rem 1.25rem;
+            border-radius: 1.25rem;
+            max-width: 80%;
+            line-height: 1.5;
+            word-wrap: break-word;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        #ai-chat-modal .ai-bubble {
+            background-color: #e2e8f0; /* Light gray */
+            color: #2d3748;
+            border-bottom-left-radius: 0.25rem;
+            align-self: flex-start;
+        }
+
+        #ai-chat-modal .user-bubble {
+            background-color: #3b82f6; /* Blue */
+            color: white;
+            border-bottom-right-radius: 0.25rem;
+            align-self: flex-end;
+        }
+
+        #ai-chat-modal .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.75rem 1.25rem;
+            background-color: #e2e8f0;
+            border-bottom-left-radius: 0.25rem;
+            align-self: flex-start;
+        }
+        #ai-chat-modal .typing-indicator span {
+            height: 8px;
+            width: 8px;
+            background-color: #a0aec0;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite both;
+        }
+        #ai-chat-modal .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        #ai-chat-modal .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
     </style>
 </head>
 <body class="flex flex-col md:flex-row min-h-screen">
@@ -385,11 +433,30 @@ $conn->close();
             const aiChatMessagesDiv = document.getElementById('ai-chat-messages');
             const aiChatInput = document.getElementById('ai-chat-input');
             const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
+            const aiChatFileInput = document.getElementById('ai-chat-file-input');
+            const aiChatSelectedFilesDisplay = document.getElementById('ai-chat-selected-files');
+
 
             aiChatMessagesDiv.innerHTML = ''; // Clear previous messages
             aiChatInput.value = '';
             aiChatInput.disabled = false;
             aiChatSendBtn.disabled = false;
+            if (aiChatFileInput) aiChatFileInput.value = null; // Clear selected files
+            if (aiChatSelectedFilesDisplay) aiChatSelectedFilesDisplay.textContent = ''; // Clear selected files display
+
+            // Enable/disable file input based on service type
+            if (serviceType === 'junk-removal-service') {
+                if (document.getElementById('ai-chat-file-upload-section')) {
+                    document.getElementById('ai-chat-file-upload-section').classList.remove('hidden');
+                }
+                if (aiChatFileInput) aiChatFileInput.setAttribute('accept', 'image/*,video/*'); // Accept images and videos
+            } else {
+                if (document.getElementById('ai-chat-file-upload-section')) {
+                    document.getElementById('ai-chat-file-upload-section').classList.add('hidden');
+                }
+                if (aiChatFileInput) aiChatFileInput.removeAttribute('accept');
+            }
+
 
             if (serviceType === 'create-booking') {
                 aiChatTitle.textContent = 'AI Assistant - Create Booking';
@@ -403,10 +470,14 @@ $conn->close();
             // Add event listener for AI chat modal's send button
             aiChatSendBtn.onclick = () => {
                 const message = aiChatInput.value.trim();
-                if (message) {
+                const files = aiChatFileInput ? aiChatFileInput.files : []; // Get selected files
+
+                if (message || files.length > 0) {
                     addAIChatMessage(message, 'user');
                     aiChatInput.value = '';
-                    sendAIChatMessageToApi(message, serviceType);
+                    if (aiChatFileInput) aiChatFileInput.value = null; // Clear selected files after sending
+                    if (aiChatSelectedFilesDisplay) aiChatSelectedFilesDisplay.textContent = ''; // Clear selected files display
+                    sendAIChatMessageToApi(message, serviceType, files);
                 }
             };
             aiChatInput.onkeydown = (event) => {
@@ -415,32 +486,127 @@ $conn->close();
                     aiChatSendBtn.click();
                 }
             };
+
+            // Event listener for file input change
+            if (aiChatFileInput) {
+                aiChatFileInput.onchange = async () => {
+                    if (aiChatFileInput.files.length > 0) {
+                        const files = Array.from(aiChatFileInput.files);
+                        let fileNames = files.map(f => f.name).join(', ');
+                        if (aiChatSelectedFilesDisplay) aiChatSelectedFilesDisplay.textContent = `Selected: ${fileNames}`;
+
+                        // --- Video Frame Extraction Logic ---
+                        const processedFiles = [];
+                        for (const file of files) {
+                            if (file.type.startsWith('video/')) {
+                                showToast(`Processing video: ${file.name}...`, 'info');
+                                try {
+                                    const frames = await extractFramesFromVideo(file, 10); // Extract 10 frames
+                                    frames.forEach((frame, index) => {
+                                        // Convert data URL to Blob/File object to send via FormData
+                                        const blob = dataURLtoBlob(frame);
+                                        processedFiles.push(new File([blob], `frame_${file.name}_${index}.jpeg`, { type: 'image/jpeg' }));
+                                    });
+                                    showToast(`Extracted ${frames.length} frames from ${file.name}.`, 'success');
+                                } catch (error) {
+                                    console.error('Error extracting frames:', error);
+                                    showToast(`Failed to extract frames from ${file.name}.`, 'error');
+                                    processedFiles.push(file); // Send original video if frame extraction fails
+                                }
+                            } else {
+                                processedFiles.push(file); // For images, just push the original file
+                            }
+                        }
+                        // Replace original files with processed ones (frames for video)
+                        // This requires re-assigning to a new FileList or handling directly in send function
+                        // For now, I'll update the sendAIChatMessageToApi call to use `processedFiles`
+                        // and ensure `aiChatFileInput.files` is only used for display.
+                        aiChatFileInput.processedFiles = processedFiles; // Attach to input element for later retrieval
+                    } else {
+                        if (aiChatSelectedFilesDisplay) aiChatSelectedFilesDisplay.textContent = '';
+                        if (aiChatFileInput) aiChatFileInput.processedFiles = [];
+                    }
+                };
+            }
         };
 
         // Helper for AI chat messages
         function addAIChatMessage(message, sender) {
             const aiChatMessagesDiv = document.getElementById('ai-chat-messages');
             const messageDiv = document.createElement('div');
-            messageDiv.classList.add('text-gray-700', 'mb-2');
-            if (sender === 'user') {
-                messageDiv.classList.add('text-right');
-                messageDiv.innerHTML = `<span class="font-semibold text-green-600">You:</span> ${message}`;
-            } else {
-                messageDiv.innerHTML = `<span class="font-semibold text-blue-600">AI:</span> ${message}`;
-            }
+            messageDiv.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble'); // Apply chat bubble styles
+            messageDiv.innerHTML = `<span class="font-semibold ${sender === 'user' ? 'text-green-200' : 'text-blue-800'}">${sender === 'user' ? 'You' : 'AI'}:</span> ${message}`; // Adjusted text color for better contrast
             aiChatMessagesDiv.appendChild(messageDiv);
             aiChatMessagesDiv.scrollTop = aiChatMessagesDiv.scrollHeight;
         }
 
-        async function sendAIChatMessageToApi(message, serviceType) {
+        // --- Video Frame Extraction Function ---
+        function extractFramesFromVideo(videoFile, numFrames) {
+            return new Promise((resolve, reject) => {
+                const video = document.getElementById('hiddenVideo'); // Use the hidden video element
+                const canvas = document.getElementById('hiddenCanvas'); // Use the hidden canvas element
+                const context = canvas.getContext('2d');
+                const frames = [];
+
+                video.preload = 'metadata';
+                video.muted = true; // Mute video during processing
+                video.src = URL.createObjectURL(videoFile);
+
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+
+                    const duration = video.duration;
+                    const interval = duration / (numFrames + 1); // Get frames evenly spaced
+
+                    let framesExtracted = 0;
+                    const captureFrame = () => {
+                        if (framesExtracted < numFrames) {
+                            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                            frames.push(canvas.toDataURL('image/jpeg')); // JPEG format
+                            framesExtracted++;
+                            video.currentTime += interval; // Move to next frame time
+                        } else {
+                            URL.revokeObjectURL(video.src); // Clean up
+                            resolve(frames);
+                        }
+                    };
+
+                    video.onseeked = captureFrame; // Capture frame after seeking
+                    video.onerror = (e) => reject(new Error('Error seeking video: ' + e.message));
+
+                    // Start seeking to capture frames
+                    video.currentTime = interval;
+                };
+
+                video.onerror = (e) => reject(new Error('Error loading video: ' + e.message));
+            });
+        }
+
+        // Helper function to convert Data URL to Blob (for FormData)
+        function dataURLtoBlob(dataurl) {
+            const arr = dataurl.split(',');
+            const mime = arr[0].match(/:(.*?);/)[1];
+            const bstr = atob(arr[1]);
+            let n = bstr.length;
+            const u8arr = new Uint8Array(n);
+            while (n--) {
+                u8arr[n] = bstr.charCodeAt(n);
+            }
+            return new Blob([u8arr], { type: mime });
+        }
+
+
+        async function sendAIChatMessageToApi(message, serviceType, files = []) {
             const aiChatInput = document.getElementById('ai-chat-input');
             const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
             const aiChatMessagesDiv = document.getElementById('ai-chat-messages');
+            const aiChatFileInput = document.getElementById('ai-chat-file-input');
 
             // Show loading dots
             const loadingDiv = document.createElement('div');
-            loadingDiv.classList.add('text-gray-700', 'mb-2');
-            loadingDiv.innerHTML = '<span class="font-semibold text-blue-600">AI:</span> <i class="fas fa-spinner fa-spin text-blue-500"></i>';
+            loadingDiv.classList.add('typing-indicator'); // Use typing indicator for loading
+            loadingDiv.innerHTML = '<span></span><span></span><span></span>';
             aiChatMessagesDiv.appendChild(loadingDiv);
             aiChatMessagesDiv.scrollTop = aiChatMessagesDiv.scrollHeight;
             aiChatInput.disabled = true;
@@ -450,6 +616,16 @@ $conn->close();
             formData.append('message', message);
             formData.append('initial_service_type', serviceType);
 
+            // Use processed files from aiChatFileInput.processedFiles if available
+            const filesToSend = aiChatFileInput && aiChatFileInput.processedFiles ? aiChatFileInput.processedFiles : files;
+
+            // Append files to FormData
+            if (filesToSend.length > 0) {
+                for (let i = 0; i < filesToSend.length; i++) {
+                    formData.append('media_files[]', filesToSend[i]);
+                }
+            }
+
             try {
                 const response = await fetch('/api/openai_chat.php', {
                     method: 'POST',
@@ -457,7 +633,8 @@ $conn->close();
                 });
                 const data = await response.json();
 
-                aiChatMessagesDiv.removeChild(loadingDiv); // Remove loading dots
+                // Remove loading dots
+                aiChatMessagesDiv.removeChild(loadingDiv); 
 
                 addAIChatMessage(data.ai_response, 'ai');
 
@@ -528,6 +705,35 @@ $conn->close();
     <div id="toast-container"></div>
 
     <?php include __DIR__ . '/includes/footer.php'; // Includes modals and global JS functions ?>
+    
+    <!-- Hidden elements for video frame extraction -->
+    <video id="hiddenVideo" style="display:none;" controls></video>
+    <canvas id="hiddenCanvas" style="display:none;"></canvas>
+
+    <div id="ai-chat-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-lg h-3/4 flex flex-col text-gray-800">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-800" id="ai-chat-title">AI Assistant</h3>
+                <button class="text-gray-500 hover:text-gray-700 text-2xl" onclick="hideModal('ai-chat-modal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="ai-chat-messages" class="flex-1 overflow-y-auto border border-gray-300 rounded-lg p-4 mb-4 custom-scroll">
+            </div>
+            <div id="ai-chat-file-upload-section" class="mb-2 flex items-center hidden">
+                <input type="file" id="ai-chat-file-input" name="media_files[]" multiple style="display: none;">
+                <label for="ai-chat-file-input" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 cursor-pointer text-sm">
+                    <i class="fas fa-paperclip mr-2"></i>Attach Files
+                </label>
+                <span id="ai-chat-selected-files" class="ml-2 text-sm text-gray-500"></span>
+            </div>
+            <div class="flex">
+                <input type="text" id="ai-chat-input" placeholder="Type your message..." class="flex-1 p-3 border border-gray-300 rounded-l-lg focus:ring-blue-500 focus:border-blue-500">
+                <button id="ai-chat-send-btn" class="px-4 py-3 bg-blue-600 text-white rounded-r-lg hover:bg-blue-700 transition-colors duration-200">Send</button>
+            </div>
+        </div>
+    </div>
+
 
     <script>
         // --- Event Listeners and Initial Load Logic for Customer Dashboard ---
@@ -672,16 +878,10 @@ $conn->close();
             // Also, update direct onclicks if they still exist for "Back to Invoice Details" or "Back to Invoices" from payment form
             // Ensure these use the global functions directly or are handled by delegation
             // For example: <button onclick="window.hidePaymentForm()">
-            // The safest bet is to remove all inline onclicks and handle via delegation.
-            // Let's ensure the back button for invoices uses window.hideInvoiceDetails
-            // and the back button for payment form uses window.hidePaymentForm.
-            // These functions are already set as window. functions in invoices.php
-            // The HTML: <button class="mb-4 px-4 py-2 bg-gray-200 ... " onclick="hideInvoiceDetails()">
             // Needs to be: <button class="mb-4 px-4 py-2 bg-gray-200 ... " onclick="window.hideInvoiceDetails()">
 
             // Similarly for the payment form's back button:
-            // <button class="mb-4 px-4 py-2 bg-gray-200 ... " onclick="hidePaymentForm()">
-            // Needs to be: <button class="mb-4 px-4 py-2 bg-gray-200 ... " onclick="window.hidePaymentForm()">
+            // <button class="mb-4 px-4 py-2 bg-gray-200 ... " onclick="window.hidePaymentForm()">
 
             // Let's update invoices.php one last time to fix these onclicks to use window.
             // Or, better, use data attributes and delegate. For now, let's fix the specific onclicks directly.

@@ -102,9 +102,10 @@ $stmt->close();
             <label for="new-cardholder-name" class="block text-sm font-medium text-gray-700 mb-2">Cardholder Name</label>
             <input type="text" id="new-cardholder-name" name="cardholder_name" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
         </div>
+        <!-- Reverted to standard input fields for card number and CVV -->
         <div class="mb-5">
             <label for="new-card-number" class="block text-sm font-medium text-gray-700 mb-2">Card Number</label>
-            <input type="text" id="new-card-number" name="card_number" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="**** **** **** ****" required pattern="[0-9]{13,16}">
+            <input type="text" id="new-card-number" name="card_number" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="**** **** **** ****" required pattern="[0-9\s]{13,19}" maxlength="19">
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
             <div>
@@ -173,9 +174,12 @@ $stmt->close();
 </div>
 
 
+<!-- Removed Braintree SDK scripts -->
 <script>
     // IIFE to encapsulate the script and prevent global variable conflicts
     (function() {
+        // Removed braintreeInstance and initializeBraintree function
+
         // Client-side validation for expiration date (MM/YY)
         function isValidExpiryDate(month, year) {
             if (!/^(0[1-9]|1[0-2])$/.test(month) || !/^\d{4}$/.test(year)) {
@@ -203,11 +207,12 @@ $stmt->close();
             addPaymentMethodForm.addEventListener('submit', async function(event) {
                 event.preventDefault(); // Prevent default form submission
 
+                const cardholderName = document.getElementById('new-cardholder-name').value.trim();
                 const cardNumber = document.getElementById('new-card-number').value.trim();
                 const expiryDate = document.getElementById('new-expiry-date').value.trim(); // MM/YY format
                 const cvv = document.getElementById('new-cvv').value.trim();
-                const cardholderName = document.getElementById('new-cardholder-name').value.trim();
                 const billingAddress = document.getElementById('new-billing-address').value.trim();
+                const setDefault = document.getElementById('set-default').checked;
 
                 // Client-side validation
                 if (!cardholderName || !cardNumber || !expiryDate || !cvv || !billingAddress) {
@@ -233,6 +238,13 @@ $stmt->close();
 
                 const formData = new FormData(this); // Get all form data
                 formData.append('action', 'add_method');
+                // No payment_method_nonce needed as Braintree is removed from client-side
+                formData.append('cardholder_name', cardholderName);
+                formData.append('card_number', cardNumber); // Send raw card number
+                formData.append('expiry_date', expiryDate); // Send raw expiry date
+                formData.append('cvv', cvv); // Send raw CVV
+                formData.append('billing_address', billingAddress);
+                formData.append('set_default', setDefault ? 'on' : 'off');
 
                 try {
                     const response = await fetch('/api/customer/payment_methods.php', {

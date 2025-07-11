@@ -54,22 +54,60 @@ function getOpenAIResponse(array $messages, array $tools, string $apiKey, string
     if ($response === false) throw new Exception("cURL Error: " . $error);
 
     $responseData = json_decode($response, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        throw new Exception("Failed to decode JSON response from OpenAI. Raw response: " . $response);
+    }
     if ($httpCode !== 200) {
         throw new Exception("OpenAI API Error (HTTP {$httpCode}): " . ($responseData['error']['message'] ?? 'Unknown Error'));
     }
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        throw new Exception("Failed to decode JSON response from OpenAI.");
-    }
+    
 
     return $responseData;
+}
+
+// --- File Upload Handler (New Function) ---
+function handleFileUploads(): array {
+    $uploaded_urls = [];
+    $uploadDir = __DIR__ . '/../uploads/junk_removal_media/';
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0775, true);
+    }
+
+    if (!empty($_FILES['media_files']['name'][0])) {
+        foreach ($_FILES['media_files']['name'] as $key => $name) {
+            if ($_FILES['media_files']['error'][$key] == UPLOAD_ERR_OK) {
+                $fileTmpPath = $_FILES['media_files']['tmp_name'][$key];
+                $fileExtension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+                $newFileName = uniqid('media_') . '.' . $fileExtension;
+                $destPath = $uploadDir . $newFileName;
+
+                if (move_uploaded_file($fileTmpPath, $destPath)) {
+                    $uploaded_urls[] = '/uploads/junk_removal_media/' . $newFileName;
+                } else {
+                    error_log("Failed to move uploaded file: " . $fileTmpPath);
+                }
+            } else {
+                error_log("File upload error: " . $_FILES['media_files']['error'][$key]);
+            }
+        }
+    }
+    return $uploaded_urls;
 }
 
 
 // --- Main API Logic ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $userMessageText = trim($_POST['message'] ?? '');
-    if (empty($userMessageText)) {
-        echo json_encode(['success' => false, 'message' => 'Message cannot be empty.']);
+    $initialServiceType = $_POST['initial_service_type'] ?? null;
+    $uploadedMediaUrls = [];
+
+    // Handle file uploads if present
+    if (isset($_FILES['media_files'])) {
+        $uploadedMediaUrls = handleFileUploads();
+    }
+
+    if (empty($userMessageText) && empty($uploadedMediaUrls)) {
+        echo json_encode(['success' => false, 'message' => 'Message or media cannot be empty.']);
         exit;
     }
 
@@ -78,15 +116,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $conversationId = $_SESSION['conversation_id'] ?? null;
 
     if (!$conversationId) {
-        $stmt_conv = $conn->prepare("INSERT INTO conversations (user_id) VALUES (?)");
-        $stmt_conv->bind_param("i", $userId);
+        $stmt_conv = $conn->prepare("INSERT INTO conversations (user_id, initial_service_type) VALUES (?, ?)");
+        $stmt_conv->bind_param("is", $userId, $initialServiceType);
         $stmt_conv->execute();
         $conversationId = $conn->insert_id;
         $_SESSION['conversation_id'] = $conversationId;
         $stmt_conv->close();
     }
 
-    $messages = [['role' => 'system', 'content' => "You are a helpful and friendly AI assistant for {$companyName}. Your goal is to gather all necessary information from a customer to create a service quote. Ask for customer type (Residential or Commercial) and rental duration. If the user requests multiple pieces of equipment, ensure you capture details for each one in an array. When you have ALL the required information, you MUST call the `submit_quote_request` tool."]];
+    $system_prompt = "You are a helpful and friendly AI assistant for {$companyName}. Your primary role is to gather all necessary information from the customer to create a detailed service quote. You must ask for the following details for any service: customer type (Residential or Commercial), customer name, customer email, customer phone, location, and service date.
+
+For **equipment rental** requests, also ask for:
+- Specific equipment items (e.g., 10-yard dumpster, temporary toilet, handwash station).
+- Quantity for each item.
+- Rental duration in days for each item.
+- Preferred delivery time (e.g., morning, afternoon).
+- Whether a live load is needed (boolean).
+- If it's an urgent request (boolean).
+- Any specific driver instructions for delivery.
+
+For **junk removal** requests, also ask for:
+- A description of the junk items. If images or videos are provided, you must analyze them to infer item types, estimated quantities, dimensions, and weights.
+- Preferred removal date and time.
+- Any additional comments or specific requests regarding the removal.
+- Acknowledge and confirm uploaded media if provided.
+
+**Crucially, you MUST call the `submit_quote_request` tool only when you have ALL the required information for the requested service type, including inferred details from images/videos for junk removal. If any required piece of information is missing, ask for it clearly and concisely. If media is uploaded for junk removal, use the Vision capabilities to identify items and their approximate characteristics.**";
+
+
+    $messages = [['role' => 'system', 'content' => $system_prompt]];
     $stmt_fetch = $conn->prepare("SELECT role, content FROM chat_messages WHERE conversation_id = ? ORDER BY created_at ASC");
     $stmt_fetch->bind_param("i", $conversationId);
     $stmt_fetch->execute();
@@ -95,53 +153,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $messages[] = ['role' => $row['role'], 'content' => $row['content']];
     }
     $stmt_fetch->close();
-    $messages[] = ['role' => 'user', 'content' => $userMessageText];
 
-    // --- AI Tool Definition ---
+    // Prepare message content for OpenAI, including image URLs if available
+    $message_content = [['type' => 'text', 'text' => $userMessageText]];
+    foreach ($uploadedMediaUrls as $url) {
+        $full_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]" . $url;
+        $message_content[] = ['type' => 'image_url', 'image_url' => ['url' => $full_url]];
+    }
+    $messages[] = ['role' => 'user', 'content' => $message_content];
+
+
+    // --- AI Tool Definition (Updated for structured junk_items and media_urls) ---
     $tools = [
         [
             'type' => 'function',
             'function' => [
                 'name' => 'submit_quote_request',
-                'description' => 'Submits the collected information to create a quote request.',
+                'description' => 'Submits the collected information to create a quote request. Requires all essential details for the service type.',
                 'parameters' => [
                     'type' => 'object',
                     'properties' => [
-                        'service_type' => ['type' => 'string', 'enum' => ['equipment_rental', 'junk_removal']],
+                        'service_type' => ['type' => 'string', 'enum' => ['equipment_rental', 'junk_removal'], 'description' => 'The type of service requested.'],
                         'customer_type' => ['type' => 'string', 'enum' => ['Residential', 'Commercial'], 'description' => 'The type of customer.'],
-                        'customer_name' => ['type' => 'string'],
-                        'customer_email' => ['type' => 'string'],
-                        'customer_phone' => ['type' => 'string'],
-                        'location' => ['type' => 'string'],
-                        'service_date' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
-                        'service_time' => ['type' => 'string'],
-                        'is_urgent' => ['type' => 'boolean'],
-                        'live_load_needed' => ['type' => 'boolean'],
-                        'driver_instructions' => ['type' => 'string'],
+                        'customer_name' => ['type' => 'string', 'description' => 'Full name of the customer.'],
+                        'customer_email' => ['type' => 'string', 'description' => 'Email address of the customer.'],
+                        'customer_phone' => ['type' => 'string', 'description' => 'Phone number of the customer.'],
+                        'location' => ['type' => 'string', 'description' => 'Full address or detailed location for the service.'],
+                        'service_date' => ['type' => 'string', 'description' => 'The preferred date for the service in YYYY-MM-DD format.'],
+                        'service_time' => ['type' => 'string', 'description' => 'The preferred time for the service (e.g., "morning", "afternoon", "10:00 AM").'],
+                        'is_urgent' => ['type' => 'boolean', 'description' => 'True if the request is urgent, false otherwise.'],
+                        'live_load_needed' => ['type' => 'boolean', 'description' => 'True if a live load is needed for equipment rental, false otherwise.'],
+                        'driver_instructions' => ['type' => 'string', 'description' => 'Any specific instructions for the driver.'],
                         'equipment_details' => [
                             'type' => 'array',
-                            'description' => 'A list of all equipment items for a rental request.',
+                            'description' => 'A list of all equipment items for an equipment rental request.',
                             'items' => [
                                 'type' => 'object',
                                 'properties' => [
-                                    'equipment_name' => ['type' => 'string', 'description' => 'The name and size of the equipment, e.g., "15-yard dumpster".'],
+                                    'equipment_name' => ['type' => 'string', 'description' => 'The name and size of the equipment, e.g., "15-yard dumpster", "temporary toilet".'],
                                     'quantity' => ['type' => 'integer', 'description' => 'The number of units required for this specific item.'],
-                                    'duration_days' => ['type' => 'integer', 'description' => 'The total number of days for the rental period.'],
-                                    'specific_needs' => ['type' => 'string', 'description' => 'Any other specific requirements or details for this item.']
+                                    'duration_days' => ['type' => 'integer', 'description' => 'The total number of days for the rental period for this item.'],
+                                    'specific_needs' => ['type' => 'string', 'description' => 'Any other specific requirements or details for this equipment item.']
                                 ],
-                                'required' => ['equipment_name', 'quantity']
+                                'required' => ['equipment_name', 'quantity', 'duration_days']
                             ]
                         ],
                         'junk_details' => [
                             'type' => 'object',
-                            'description' => 'Details for a junk removal request.',
+                            'description' => 'Details for a junk removal request, including inferred items from media analysis.',
                              'properties' => [
-                                'junk_items' => ['type' => 'array', 'items' => ['type' => 'string']],
-                                'additional_comment' => ['type' => 'string']
-                            ]
+                                'junk_items' => [
+                                    'type' => 'array',
+                                    'description' => 'List of junk items, inferred from description or uploaded media.',
+                                    'items' => [
+                                        'type' => 'object',
+                                        'properties' => [
+                                            'itemType' => ['type' => 'string', 'description' => 'Type of junk item, e.g., "Sofa", "Refrigerator", "Construction Debris".'],
+                                            'quantity' => ['type' => 'integer', 'description' => 'Estimated quantity of the item.'],
+                                            'estDimensions' => ['type' => 'string', 'description' => 'Estimated dimensions, e.g., "8x3x3 ft", "Large".'],
+                                            'estWeight' => ['type' => 'string', 'description' => 'Estimated weight, e.g., "100kg", "Heavy".']
+                                        ],
+                                        'required' => ['itemType', 'quantity']
+                                    ]
+                                ],
+                                'recommended_dumpster_size' => ['type' => 'string', 'description' => 'Recommended dumpster size if applicable, e.g., "20-yard".'],
+                                'additional_comment' => ['type' => 'string', 'description' => 'Any additional comments or specific requests regarding the removal.'],
+                                'media_urls' => [
+                                    'type' => 'array',
+                                    'description' => 'URLs of uploaded images or video frames for junk removal, if provided by the user.',
+                                    'items' => ['type' => 'string']
+                                ]
+                            ],
+                            'required' => ['junk_items']
                         ]
                     ],
-                    'required' => ['service_type', 'customer_name', 'customer_email', 'customer_phone', 'location', 'service_date', 'customer_type']
+                    'required' => ['service_type', 'customer_type', 'customer_name', 'customer_email', 'customer_phone', 'location', 'service_date', 'service_time']
                 ]
             ]
         ]
@@ -161,6 +247,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $conn->begin_transaction();
             try {
+                // Ensure customer_type is handled correctly, defaulting if not provided
+                $customer_type = $arguments['customer_type'] ?? 'Residential';
+
                 $stmt_user_check = $conn->prepare("SELECT id FROM users WHERE email = ?");
                 $stmt_user_check->bind_param("s", $arguments['customer_email']);
                 $stmt_user_check->execute();
@@ -189,8 +278,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $removal_time = $arguments['service_type'] === 'junk_removal' ? ($arguments['service_time'] ?? null) : null;
                 $live_load = (int)($arguments['live_load_needed'] ?? 0);
                 $is_urgent = (int)($arguments['is_urgent'] ?? 0);
-                $customer_type = $arguments['customer_type'] ?? 'Residential'; // Default to Residential
-
+                
                 $stmt_quote->bind_param("isssssssiiss", $userId, $arguments['service_type'], $customer_type, $arguments['location'], $delivery_date, $removal_date, $delivery_time, $removal_time, $live_load, $is_urgent, $arguments['driver_instructions'], $details_json);
                 $stmt_quote->execute();
                 $quoteId = $conn->insert_id;
@@ -208,6 +296,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmt_eq->execute();
                     }
                     $stmt_eq->close();
+                } elseif ($arguments['service_type'] === 'junk_removal' && !empty($arguments['junk_details'])) {
+                    $stmt_junk = $conn->prepare("INSERT INTO junk_removal_details (quote_id, junk_items_json, recommended_dumpster_size, additional_comment, media_urls_json) VALUES (?, ?, ?, ?, ?)");
+                    
+                    // Ensure junk_items is properly encoded as JSON
+                    $junk_items_json = json_encode($arguments['junk_details']['junk_items'] ?? []);
+                    $recommended_dumpster_size = $arguments['junk_details']['recommended_dumpster_size'] ?? null;
+                    $additional_comment = $arguments['junk_details']['additional_comment'] ?? null;
+                    
+                    // Store media URLs from the tool call (prioritize tool's URLs, fallback to directly uploaded)
+                    $media_urls_json = json_encode($arguments['junk_details']['media_urls'] ?? $uploadedMediaUrls);
+
+                    $stmt_junk->bind_param("issss", $quoteId, $junk_items_json, $recommended_dumpster_size, $additional_comment, $media_urls_json);
+                    $stmt_junk->execute();
+                    $stmt_junk->close();
                 }
 
                 $conn->commit();
@@ -223,11 +325,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Save user's message to chat history
     $stmt_save_user = $conn->prepare("INSERT INTO chat_messages (conversation_id, role, content) VALUES (?, 'user', ?)");
     $stmt_save_user->bind_param("is", $conversationId, $userMessageText);
     $stmt_save_user->execute();
     $stmt_save_user->close();
     
+    // Save AI's response to chat history
     $stmt_save_ai = $conn->prepare("INSERT INTO chat_messages (conversation_id, role, content) VALUES (?, 'assistant', ?)");
     $stmt_save_ai->bind_param("is", $conversationId, $aiResponseText);
     $stmt_save_ai->execute();
