@@ -34,7 +34,7 @@ $stmt_all_invoices->close();
 // If a specific invoice number is requested, fetch its details
 if ($requested_invoice_id || $requested_quote_id) { 
     $sql = "SELECT
-                i.id, i.invoice_number, i.amount, i.status, i.created_at, i.due_date, i.transaction_id, i.payment_method, i.discount, i.tax,
+                i.id, i.invoice_number, i.amount, i.status, i.created_at, i.due_date, i.transaction_id, i.payment_method, i.discount, i.tax, i.booking_id,
                 u.first_name, u.last_name, u.email, u.address, u.city, u.state, u.zip_code
             FROM invoices i
             JOIN users u ON i.user_id = u.id
@@ -65,6 +65,19 @@ if ($requested_invoice_id || $requested_quote_id) {
             $invoice_detail['items'][] = $item_row;
         }
         $stmt_items->close();
+
+        // Fetch booking start and end dates if a booking_id is associated with the invoice
+        if (!empty($invoice_detail['booking_id'])) {
+            $stmt_booking_dates = $conn->prepare("SELECT start_date, end_date FROM bookings WHERE id = ?");
+            $stmt_booking_dates->bind_param("i", $invoice_detail['booking_id']);
+            $stmt_booking_dates->execute();
+            $booking_dates = $stmt_booking_dates->get_result()->fetch_assoc();
+            $stmt_booking_dates->close();
+            if ($booking_dates) {
+                $invoice_detail['booking_start_date'] = $booking_dates['start_date'];
+                $invoice_detail['booking_end_date'] = $booking_dates['end_date'];
+            }
+        }
 
     }
     $stmt_detail->close();
@@ -150,6 +163,12 @@ function getStatusBadgeClass($status) {
                 <p class="text-gray-600"><span class="font-medium">Status:</span> <span id="detail-invoice-status" class="font-semibold <?php echo getStatusBadgeClass($invoice_detail['status']); ?>"><?php echo htmlspecialchars(strtoupper(str_replace('_', ' ', $invoice_detail['status']))); ?></span></p>
                 <p class="text-gray-600"><span class="font-medium">Transaction ID:</span> <?php echo htmlspecialchars($invoice_detail['transaction_id'] ?? 'N/A'); ?></p>
                 <p class="text-gray-600"><span class="font-medium">Payment Method:</span> <?php echo htmlspecialchars($invoice_detail['payment_method'] ?? 'N/A'); ?></p>
+                <?php if (!empty($invoice_detail['booking_start_date'])): ?>
+                    <p class="text-gray-600"><span class="font-medium">Rental Start Date:</span> <?php echo (new DateTime($invoice_detail['booking_start_date']))->format('Y-m-d'); ?></p>
+                <?php endif; ?>
+                <?php if (!empty($invoice_detail['booking_end_date'])): ?>
+                    <p class="text-gray-600"><span class="font-medium">Rental End Date:</span> <?php echo (new DateTime($invoice_detail['booking_end_date']))->format('Y-m-d'); ?></p>
+                <?php endif; ?>
             </div>
             <div>
                 <p class="text-gray-600"><span class="font-medium">Billed To:</span> <?php echo htmlspecialchars($invoice_detail['first_name'] . ' ' . $invoice_detail['last_name']); ?></p>

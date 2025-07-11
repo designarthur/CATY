@@ -191,6 +191,35 @@ function getAdminStatusBadgeClass($status) {
                     
                     <?php if ($quote_detail_view_data['service_type'] === 'equipment_rental'): ?>
                         <h3 class="text-lg font-semibold text-gray-800 mb-3">Equipment Requested</h3>
+                        <?php
+                            $rental_start_date = $quote_detail_view_data['delivery_date'] ?? null;
+                            $max_duration_days = 0;
+                            foreach ($quote_detail_view_data['equipment_details'] as $item) {
+                                if (isset($item['duration_days']) && $item['duration_days'] > $max_duration_days) {
+                                    $max_duration_days = $item['duration_days'];
+                                }
+                            }
+                            $rental_end_date = null;
+                            if ($rental_start_date && $max_duration_days > 0) {
+                                try {
+                                    $start_dt = new DateTime($rental_start_date);
+                                    $end_dt = clone $start_dt; // Clone to avoid modifying original DateTime object
+                                    $end_dt->modify("+$max_duration_days days");
+                                    $rental_end_date = $end_dt->format('Y-m-d');
+                                } catch (Exception $e) {
+                                    error_log("Date calculation error for admin quote ID {$quote_detail_view_data['id']}: " . $e->getMessage());
+                                }
+                            }
+                        ?>
+                        <?php if ($rental_start_date): ?>
+                            <p class="text-sm text-gray-700"><strong>Rental Start Date:</strong> <?php echo htmlspecialchars($rental_start_date); ?></p>
+                        <?php endif; ?>
+                        <?php if ($rental_end_date): ?>
+                            <p class="text-sm text-gray-700"><strong>Rental End Date:</strong> <?php echo htmlspecialchars($rental_end_date); ?></p>
+                        <?php endif; ?>
+                        <?php if ($max_duration_days > 0): ?>
+                            <p class="text-sm text-gray-700 mb-4"><strong>Duration:</strong> <?php echo htmlspecialchars($max_duration_days); ?> Days</p>
+                        <?php endif; ?>
                         <ul class="list-disc list-inside space-y-3 pl-2">
                             <?php foreach ($quote_detail_view_data['equipment_details'] as $item): ?>
                                 <li>

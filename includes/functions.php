@@ -217,15 +217,23 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
     }
 
     $booking_number = 'BK-' . str_pad($invoice_id, 6, '0', STR_PAD_LEFT);
-    $start_date = $data['delivery_date'] ?? $data['removal_date']; // Use delivery or removal date from quote
-    $end_date = null; // Will be calculated based on duration or default
+    
+    // --- FIX 1: Use quote's delivery_date or removal_date as booking start_date ---
+    $start_date = $data['delivery_date'] ?? $data['removal_date']; 
+    if (empty($start_date)) {
+        // Fallback to current date if no specific date was set in the quote, though unlikely for a confirmed booking.
+        $start_date = date('Y-m-d');
+        error_log("Booking start_date not found in quote {$data['quote_id']}, defaulting to today for booking ID {$booking_id}");
+    }
+
+    $end_date = null; // Initialize end_date
     $equipment_details_json = null;
     $junk_details_json = null;
 
     // Fetch service-specific details from quote tables if available
     if ($data['service_type'] == 'equipment_rental' && $data['quote_id']) {
-        // Fetch all equipment details for the quote to properly serialize them
         $equipment_items_for_json = [];
+        // Use JOIN to get equipment_details related to the quote
         $stmt_eq_details = $conn->prepare("SELECT equipment_name, quantity, duration_days, specific_needs FROM quote_equipment_details WHERE quote_id = ?");
         $stmt_eq_details->bind_param("i", $data['quote_id']);
         $stmt_eq_details->execute();
@@ -237,12 +245,30 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
 
         $equipment_details_json = json_encode($equipment_items_for_json);
 
-        // Calculate end_date based on duration_days from the first equipment item if available, otherwise default
-        $duration = !empty($equipment_items_for_json[0]['duration_days']) ? $equipment_items_for_json[0]['duration_days'] : 7; // Default to 7 days
-        $end_date = $start_date ? (new DateTime($start_date))->modify("+$duration days")->format('Y-m-d') : null;
+        // --- FIX 2: Calculate end_date based on max duration from equipment_details ---
+        // Assuming all equipment for a single booking will have the same (or relevant) rental duration
+        $duration = 0;
+        foreach ($equipment_items_for_json as $item) {
+            $duration = max($duration, (int)($item['duration_days'] ?? 0));
+        }
+        // If no duration found, default to a reasonable period (e.g., 7 days)
+        if ($duration === 0) {
+            $duration = 7; 
+            error_log("No duration_days found for equipment rental quote {$data['quote_id']}, defaulting to 7 days.");
+        }
+        
+        // Calculate end_date from the determined start_date and duration
+        if ($start_date) {
+            try {
+                $startDateTime = new DateTime($start_date);
+                $end_date = $startDateTime->modify("+$duration days")->format('Y-m-d');
+            } catch (Exception $e) {
+                error_log("Error calculating end_date for booking from quote {$data['quote_id']}: {$e->getMessage()}");
+                $end_date = null; // Fallback if date calculation fails
+            }
+        }
 
     } else if ($data['service_type'] == 'junk_removal' && $data['quote_id']) {
-        // Fetch junk removal details for the quote to properly serialize them
         $junk_details_for_json = [];
         $stmt_junk_details = $conn->prepare("SELECT junk_items_json, recommended_dumpster_size, additional_comment FROM junk_removal_details WHERE quote_id = ?");
         $stmt_junk_details->bind_param("i", $data['quote_id']);
@@ -258,7 +284,7 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
             ];
         }
         $junk_details_json = json_encode($junk_details_for_json);
-        // For junk removal, end_date might be the same as start_date or null if it's a one-time service
+        // For junk removal, the end date is typically the same as the start date (one-time service)
         $end_date = $start_date; 
     }
     
@@ -268,11 +294,9 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
 
     $stmt_booking = $conn->prepare("
         INSERT INTO bookings (invoice_id, user_id, booking_number, service_type, status, start_date, end_date, delivery_location, delivery_instructions, live_load_requested, is_urgent, total_price, equipment_details, junk_details)
-        VALUES (?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
-    // Corrected bind_param types: i (invoice_id), i (user_id), s (booking_number), s (service_type),
-    // s (status), s (start_date), s (end_date), s (delivery_location), s (delivery_instructions),
-    // i (live_load_requested), i (is_urgent), d (total_price), s (equipment_details), s (junk_details)
+    // Corrected bind_param types to include end_date (s) and correctly pass all parameters
     $stmt_booking->bind_param(
         "iissssssiidsdss",
         $invoice_id,
@@ -281,7 +305,7 @@ function createBookingFromInvoice(mysqli $conn, int $invoice_id): ?int {
         $data['service_type'],
         'scheduled', // Initial status when booking is created from paid invoice
         $start_date,
-        $end_date, // This will be NULL for junk removal or calculated for equipment
+        $end_date, // This will now be correctly calculated or be null/same as start_date
         $data['location'], // Use quote location for delivery_location
         $data['driver_instructions'],
         $live_load_requested_int, 

@@ -124,13 +124,33 @@ generate_csrf_token();
 // --- Helper Functions ---
 function getStatusBadgeClass($status) {
     switch ($status) {
-        case 'pending': case 'scheduled': return 'bg-blue-100 text-blue-800';
-        case 'assigned': case 'out_for_delivery': return 'bg-purple-100 text-purple-800';
-        case 'delivered': case 'in_use': return 'bg-teal-100 text-teal-800';
-        case 'awaiting_pickup': return 'bg-yellow-100 text-yellow-800';
-        case 'completed': return 'bg-green-100 text-green-800';
-        case 'cancelled': return 'bg-red-100 text-red-800';
-        default: return 'bg-gray-100 text-gray-700';
+        case 'pending':
+        case 'scheduled':
+            return 'bg-blue-100 text-blue-800';
+        case 'assigned':
+        case 'out_for_delivery':
+            return 'bg-purple-100 text-purple-800';
+        case 'delivered':
+        case 'in_use':
+            return 'bg-teal-100 text-teal-800';
+        case 'awaiting_pickup':
+            return 'bg-yellow-100 text-yellow-800';
+        case 'completed':
+            return 'bg-green-100 text-green-800';
+        case 'cancelled':
+            return 'bg-red-100 text-red-800';
+        case 'relocation_requested':
+            return 'bg-indigo-100 text-indigo-800';
+        case 'swap_requested':
+            return 'bg-pink-100 text-pink-800';
+        case 'relocated':
+            return 'bg-lime-100 text-lime-800';
+        case 'swapped':
+            return 'bg-emerald-100 text-emerald-800';
+        case 'extended':
+            return 'bg-cyan-100 text-cyan-800';
+        default:
+            return 'bg-gray-100 text-gray-700';
     }
 }
 function getTimelineIconClass($status) {
@@ -143,6 +163,11 @@ function getTimelineIconClass($status) {
         case 'awaiting_pickup': return 'fa-clock';
         case 'completed': return 'fa-check-circle';
         case 'cancelled': return 'fa-times-circle';
+        case 'relocation_requested': return 'fa-map-marker-alt';
+        case 'swap_requested': return 'fa-exchange-alt';
+        case 'relocated': return 'fa-truck-moving';
+        case 'swapped': return 'fa-sync-alt';
+        case 'extended': return 'fa-calendar-plus';
         default: return 'fa-info-circle';
     }
 }
@@ -256,7 +281,7 @@ function getTimelineIconClass($status) {
                              <?php elseif ($booking_detail['extension_request_id'] && $booking_detail['extension_request_status'] === 'approved' && $booking_detail['extension_invoice_id'] && $booking_detail['extension_invoice_status'] === 'pending'): ?>
                                 <button class="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-md animate-pulse"
                                         onclick="window.loadCustomerSection('invoices', { invoice_id: <?php echo $booking_detail['extension_invoice_id']; ?> });">
-                                    <i class="fas fa-file-invoice-dollar mr-2"></i>Pay for Extension
+                                    <i class="fas fa-file-invoice-dollar mr-2"></i>Extension Approved! Pay Invoice
                                 </button>
                              <?php else: ?>
                                 <button class="w-full px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors duration-200 shadow-md request-extension-btn"

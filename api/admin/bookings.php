@@ -206,6 +206,16 @@ function handleAddCharge($conn) {
     $invoice_id = $conn->insert_id;
     $stmt_invoice->close();
     
+    // --- FIX: Add line item for additional charge ---
+    $stmt_insert_item = $conn->prepare("INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total) VALUES (?, ?, 1, ?, ?)");
+    $item_description = "Additional Charge ({$charge_type}) for Booking #{$booking_number}: {$description}";
+    $stmt_insert_item->bind_param("isdd", $invoice_id, $item_description, $amount, $amount);
+    if (!$stmt_insert_item->execute()) {
+        throw new Exception('Failed to insert invoice item for additional charge.');
+    }
+    $stmt_insert_item->close();
+
+
     // 4. Link the charge to the new invoice
     $stmt_link = $conn->prepare("UPDATE booking_charges SET invoice_id = ? WHERE id = ?");
     $stmt_link->bind_param("ii", $invoice_id, $charge_id);
@@ -295,6 +305,16 @@ function handleApproveExtension($conn) {
     $invoice_id = $conn->insert_id;
     $stmt_invoice->close();
     
+    // --- FIX: Add line item for rental extension ---
+    $stmt_insert_item = $conn->prepare("INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total) VALUES (?, ?, 1, ?, ?)");
+    $item_description = "Rental Extension for Booking #{$booking['booking_number']} ({$extension_days} days)";
+    $stmt_insert_item->bind_param("isdd", $invoice_id, $item_description, $extension_cost, $extension_cost);
+    if (!$stmt_insert_item->execute()) {
+        throw new Exception('Failed to insert invoice item for rental extension.');
+    }
+    $stmt_insert_item->close();
+
+
     // Link the new invoice to the extension request
     $stmt_link_inv = $conn->prepare("UPDATE booking_extension_requests SET invoice_id = ? WHERE id = ?");
     $stmt_link_inv->bind_param("ii", $invoice_id, $request_id);

@@ -150,6 +150,35 @@ function getCustomerStatusBadgeClass($status) {
                                     <?php if ($quote['service_type'] === 'equipment_rental' && !empty($quote['equipment_details'])): ?>
                                         <h4 class="text-md font-semibold text-gray-700 mb-2">Equipment Details:</h4>
                                         <ul class="list-disc list-inside space-y-2 pl-4">
+                                            <?php
+                                            $rental_start_date = $quote['delivery_date'] ?? null;
+                                            $max_duration_days = 0;
+                                            foreach ($quote['equipment_details'] as $item) {
+                                                if (isset($item['duration_days']) && $item['duration_days'] > $max_duration_days) {
+                                                    $max_duration_days = $item['duration_days'];
+                                                }
+                                            }
+                                            $rental_end_date = null;
+                                            if ($rental_start_date && $max_duration_days > 0) {
+                                                try {
+                                                    $start_dt = new DateTime($rental_start_date);
+                                                    $end_dt = $start_dt->modify("+$max_duration_days days");
+                                                    $rental_end_date = $end_dt->format('Y-m-d');
+                                                } catch (Exception $e) {
+                                                    error_log("Date calculation error for quote ID {$quote['id']}: " . $e->getMessage());
+                                                }
+                                            }
+                                            ?>
+                                            <?php if ($rental_start_date): ?>
+                                                <p><span class="font-medium">Rental Start Date:</span> <?php echo htmlspecialchars($rental_start_date); ?></p>
+                                            <?php endif; ?>
+                                            <?php if ($rental_end_date): ?>
+                                                <p><span class="font-medium">Rental End Date:</span> <?php echo htmlspecialchars($rental_end_date); ?></p>
+                                            <?php endif; ?>
+                                            <?php if ($max_duration_days > 0): ?>
+                                                <p><span class="font-medium">Duration:</span> <?php echo htmlspecialchars($max_duration_days); ?> Days</p>
+                                            <?php endif; ?>
+
                                             <?php foreach ($quote['equipment_details'] as $item): ?>
                                                 <li>
                                                     <strong><?php echo htmlspecialchars($item['quantity']); ?>x</strong> <?php echo htmlspecialchars($item['equipment_name']); ?>
