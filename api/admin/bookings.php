@@ -245,62 +245,80 @@ function handleGetBookingByQuoteId($conn) {
 
 function handleApproveExtension($conn) {
     $booking_id = filter_input(INPUT_POST, 'booking_id', FILTER_VALIDATE_INT);
+    $request_id = filter_input(INPUT_POST, 'extension_request_id', FILTER_VALIDATE_INT);
+    $pricing_option = $_POST['pricing_option'] ?? 'daily_rate';
     $extension_days = filter_input(INPUT_POST, 'extension_days', FILTER_VALIDATE_INT);
     $daily_rate = filter_input(INPUT_POST, 'daily_rate', FILTER_VALIDATE_FLOAT);
+    $custom_total_price = filter_input(INPUT_POST, 'custom_total_price', FILTER_VALIDATE_FLOAT);
 
-    if (!$booking_id || !$extension_days || !$daily_rate) {
-        throw new Exception('Booking ID, extension days, and daily rate are required.');
+    if (!$booking_id || !$request_id || !$extension_days) {
+        throw new Exception('Booking ID, Request ID, and extension days are required.');
     }
+
+    if ($pricing_option === 'daily_rate' && (!$daily_rate || $daily_rate <= 0)) {
+        throw new Exception('A valid daily rate is required for this pricing method.');
+    }
+    if ($pricing_option === 'custom_total' && (!$custom_total_price || $custom_total_price <= 0)) {
+        throw new Exception('A valid custom total price is required for this pricing method.');
+    }
+
+    $extension_cost = ($pricing_option === 'daily_rate') ? ($extension_days * $daily_rate) : $custom_total_price;
 
     $conn->begin_transaction();
 
-    // 1. Fetch booking details
+    // 1. Fetch booking and user details
     $stmt_booking = $conn->prepare("SELECT * FROM bookings WHERE id = ?");
     $stmt_booking->bind_param("i", $booking_id);
     $stmt_booking->execute();
     $booking = $stmt_booking->get_result()->fetch_assoc();
     $stmt_booking->close();
+    if (!$booking) throw new Exception('Booking not found.');
 
-    if (!$booking) {
-        throw new Exception('Booking not found.');
+    // 2. Update the extension request status to 'approved'
+    $stmt_update_req = $conn->prepare("UPDATE booking_extension_requests SET status = 'approved' WHERE id = ? AND status = 'pending'");
+    $stmt_update_req->bind_param("i", $request_id);
+    $stmt_update_req->execute();
+    if ($stmt_update_req->affected_rows === 0) {
+        throw new Exception('Extension request not found or already processed.');
     }
-
-    // 2. Calculate new end date and extension cost
-    $new_end_date = date('Y-m-d', strtotime($booking['end_date'] . " + $extension_days days"));
-    $extension_cost = $extension_days * $daily_rate;
-
-    // 3. Update booking with new end date
-    $stmt_update_booking = $conn->prepare("UPDATE bookings SET end_date = ? WHERE id = ?");
-    $stmt_update_booking->bind_param("si", $new_end_date, $booking_id);
-    $stmt_update_booking->execute();
-    $stmt_update_booking->close();
-
-    // 4. Create invoice for the extension
+    $stmt_update_req->close();
+    
+    // 3. Create a new invoice for the extension cost
     $invoice_number = 'INV-EXT-' . strtoupper(generateToken(6));
     $due_date = date('Y-m-d', strtotime('+7 days'));
-    $notes = "Rental extension of $extension_days days for Booking #{$booking['booking_number']}";
+    $notes = "Rental extension of {$extension_days} days for Booking #{$booking['booking_number']}";
     $stmt_invoice = $conn->prepare("INSERT INTO invoices (user_id, booking_id, invoice_number, amount, status, due_date, notes) VALUES (?, ?, ?, ?, 'pending', ?, ?)");
     $stmt_invoice->bind_param("iisdss", $booking['user_id'], $booking_id, $invoice_number, $extension_cost, $due_date, $notes);
     $stmt_invoice->execute();
     $invoice_id = $conn->insert_id;
     $stmt_invoice->close();
+    
+    // Link the new invoice to the extension request
+    $stmt_link_inv = $conn->prepare("UPDATE booking_extension_requests SET invoice_id = ? WHERE id = ?");
+    $stmt_link_inv->bind_param("ii", $invoice_id, $request_id);
+    $stmt_link_inv->execute();
+    $stmt_link_inv->close();
 
-    // 5. Log the extension
-    $charge_description = "Rental extension of $extension_days days.";
+
+    // 4. Log the approval and invoice creation
+    $charge_description = "Rental extension of {$extension_days} days approved by admin.";
     $stmt_charge = $conn->prepare("INSERT INTO booking_charges (booking_id, invoice_id, charge_type, amount, description, created_by_admin_id) VALUES (?, ?, 'rental_extension', ?, ?, ?)");
     $stmt_charge->bind_param("iidss", $booking_id, $invoice_id, $extension_cost, $charge_description, $_SESSION['user_id']);
     $stmt_charge->execute();
     $stmt_charge->close();
+    
+    // Note: The booking end_date is NOT updated here. It should only be updated AFTER the customer pays the extension invoice.
+    // This logic should be added to the payment processing script (e.g., api/payments.php).
 
-    // 6. Notify customer
-    $notification_message = "Your rental for Booking #{$booking['booking_number']} has been extended by $extension_days days. A new invoice has been generated.";
-    $notification_link = "invoices?invoice_id={$invoice_id}";
+    // 5. Notify the customer
+    $notification_message = "Your rental extension request for Booking #{$booking['booking_number']} has been approved! Please pay the new invoice to confirm.";
+    $notification_link = "bookings?booking_id={$booking_id}"; // Link them to the booking page to see the new button
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'payment_due', ?, ?)");
     $stmt_notify->bind_param("iss", $booking['user_id'], $notification_message, $notification_link);
     $stmt_notify->execute();
     $stmt_notify->close();
 
     $conn->commit();
-    echo json_encode(['success' => true, 'message' => 'Rental extension approved and invoice generated.']);
+    echo json_encode(['success' => true, 'message' => 'Rental extension approved. An invoice has been sent to the customer.']);
 }
 ?>
