@@ -231,6 +231,28 @@ $conn->close();
         .toast.bg-warning { background-color: #f59e0b; } /* Orange */
 
         /* AI Chat Modal Specific Styles */
+        #ai-chat-modal {
+            transition: all 0.3s ease-in-out; /* Smooth transition for the modal itself */
+        }
+        #ai-chat-modal .modal-content {
+            width: 11/12;
+            max-width: 500px;
+            height: 70vh;
+            max-height: 600px;
+            transition: all 0.3s ease-in-out;
+        }
+
+        /* Full screen on small devices */
+        @media (max-width: 767px) {
+            #ai-chat-modal .modal-content {
+                width: 100vw;
+                height: 100vh;
+                margin: 0;
+                border-radius: 0;
+                max-width: none;
+                max-height: none;
+            }
+        }
         #ai-chat-modal .chat-bubble {
             padding: 0.75rem 1.25rem;
             border-radius: 1.25rem;
@@ -531,7 +553,7 @@ $conn->close();
             }
         };
 
-        function addAIChatMessage(message, sender) {
+        function addAIChatMessage(message, sender, ) {
     const aiChatMessagesDiv = document.getElementById('ai-chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
@@ -849,7 +871,6 @@ $conn->close();
                         // Assuming this button's onclick is now removed, or we just need its class/id
                         // It currently has onclick="hidePaymentForm()" which should now be handled by delegation
                         // Make sure its onclick is removed in invoices.php (if it isn't already handled by delegation below)
-                        // If its onclick is kept, then window.hidePaymentForm needs to be global.
                         // For consistency, let's keep it handled by delegation.
                         if (typeof window.hidePaymentForm === 'function') {
                             window.hidePaymentForm();
