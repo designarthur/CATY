@@ -28,6 +28,14 @@ $quoteId = filter_input(INPUT_POST, 'quote_id', FILTER_VALIDATE_INT);
 
 // --- Action Routing ---
 try {
+    // CSRF token validation with enhanced logging
+    if (!isset($_POST['csrf_token'])) {
+        error_log("CSRF token missing in POST data for action: $action");
+        throw new Exception('CSRF token missing. Please refresh and try again.');
+    }
+    // error_log("Received CSRF token: " . $_POST['csrf_token']); // Uncomment for debugging
+    validate_csrf_token(); // This function will throw an exception if token is invalid
+
     switch ($action) {
         case 'submit_quote':
             handleSubmitQuote($conn);
@@ -40,6 +48,9 @@ try {
             break;
         case 'delete_bulk':
             handleDeleteBulk($conn);
+            break;
+        case 'update_items_only': // New action to update only item details
+            handleUpdateItemsOnly($conn);
             break;
         default:
             http_response_code(400);
@@ -57,35 +68,149 @@ try {
 }
 
 
-// --- Handler Functions ---
+// --- Helper Functions for Item Details Management ---
 
 /**
- * Submits a price for a quote, including new charges, and notifies the customer.
+ * Deletes existing item details for a quote based on service type.
  */
+function deleteQuoteItemDetails($conn, $quoteId, $serviceType) {
+    if ($serviceType === 'equipment_rental') {
+        $stmt = $conn->prepare("DELETE FROM quote_equipment_details WHERE quote_id = ?");
+    } elseif ($serviceType === 'junk_removal') {
+        $stmt = $conn->prepare("DELETE FROM junk_removal_details WHERE quote_id = ?");
+    } else {
+        return; // No specific details table for other types
+    }
+    $stmt->bind_param("i", $quoteId);
+    $stmt->execute();
+    $stmt->close();
+}
+
+/**
+ * Inserts new item details for a quote based on service type.
+ */
+function insertQuoteItemDetails($conn, $quoteId, $serviceType, $items) {
+    if ($serviceType === 'equipment_rental') {
+        $stmt = $conn->prepare("INSERT INTO quote_equipment_details (quote_id, equipment_name, quantity, duration_days, specific_needs) VALUES (?, ?, ?, ?, ?)");
+        foreach ($items as $item) {
+            $equipmentName = $item['equipment_name'] ?? 'N/A';
+            $quantity = filter_var($item['quantity'], FILTER_VALIDATE_INT, ['options' => ['default' => 1]]);
+            $durationDays = filter_var($item['duration_days'], FILTER_VALIDATE_INT) === false ? null : (int)$item['duration_days'];
+            $specificNeeds = $item['specific_needs'] ?? null;
+            $stmt->bind_param("isiss", $quoteId, $equipmentName, $quantity, $durationDays, $specificNeeds);
+            $stmt->execute();
+        }
+    } elseif ($serviceType === 'junk_removal') {
+        // For junk removal, we update the single JSON field
+        $final_junk_items_json = json_encode($items); // The entire array is one JSON string
+        // Check if a record already exists, if so UPDATE, else INSERT
+        $stmt_check = $conn->prepare("SELECT COUNT(*) FROM junk_removal_details WHERE quote_id = ?");
+        $stmt_check->bind_param("i", $quoteId);
+        $stmt_check->execute();
+        $exists = $stmt_check->get_result()->fetch_row()[0] > 0;
+        $stmt_check->close();
+
+        if ($exists) {
+            $stmt = $conn->prepare("UPDATE junk_removal_details SET junk_items_json = ? WHERE quote_id = ?");
+            $stmt->bind_param("si", $final_junk_items_json, $quoteId);
+        } else {
+            // This case might not be hit if AI creates the draft, but as a fallback
+            $stmt = $conn->prepare("INSERT INTO junk_removal_details (quote_id, junk_items_json) VALUES (?, ?)");
+            $stmt->bind_param("is", $quoteId, $final_junk_items_json);
+        }
+        $stmt->execute();
+    }
+    $stmt->close();
+}
+
+
+// --- New Handler for updating only item details ---
+function handleUpdateItemsOnly($conn) {
+    $quoteId = filter_input(INPUT_POST, 'quote_id', FILTER_VALIDATE_INT);
+    $serviceType = $_POST['service_type'] ?? '';
+    $items = json_decode($_POST['items'] ?? '[]', true);
+
+    if (!$quoteId || empty($serviceType) || !is_array($items)) {
+        throw new Exception('Invalid parameters for item update.');
+    }
+
+    $conn->begin_transaction();
+    try {
+        // Verify the quote exists and belongs to the correct service type
+        $stmt_verify = $conn->prepare("SELECT id FROM quotes WHERE id = ? AND service_type = ?");
+        $stmt_verify->bind_param("is", $quoteId, $serviceType);
+        $stmt_verify->execute();
+        if ($stmt_verify->get_result()->num_rows === 0) {
+            throw new Exception('Quote not found or service type mismatch.');
+        }
+        $stmt_verify->close();
+
+        deleteQuoteItemDetails($conn, $quoteId, $serviceType);
+        insertQuoteItemDetails($conn, $quoteId, $serviceType, $items);
+
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'Item details updated successfully!']);
+    } catch (Exception $e) {
+        $conn->rollback();
+        throw $e;
+    }
+}
+
+
+// --- Main Handler for Submitting a Quote ---
 function handleSubmitQuote($conn) {
     // --- Input Validation ---
     $quoteId = filter_input(INPUT_POST, 'quote_id', FILTER_VALIDATE_INT);
-    $quotedPrice = filter_input(INPUT_POST, 'quoted_price', FILTER_VALIDATE_FLOAT);
+    $serviceType = $_POST['service_type'] ?? ''; // New: Get service type from form
+    $items = json_decode($_POST['items'] ?? '[]', true); // New: Get items from form
+
+    // Conditional pricing fields
+    $quotedPrice = null; // Will be set based on service type
+    $totalCost = filter_input(INPUT_POST, 'total_cost', FILTER_VALIDATE_FLOAT); // For junk removal
+    $basePrice = filter_input(INPUT_POST, 'quoted_price', FILTER_VALIDATE_FLOAT); // For equipment rental
+
     $dailyRate = filter_input(INPUT_POST, 'daily_rate', FILTER_VALIDATE_FLOAT); 
     $relocationCharge = filter_input(INPUT_POST, 'relocation_charge', FILTER_VALIDATE_FLOAT); 
-    // Correctly get boolean from checkbox '1' or '0'
     $isRelocationIncluded = filter_input(INPUT_POST, 'is_relocation_included', FILTER_VALIDATE_INT) === 1; 
     $swapCharge = filter_input(INPUT_POST, 'swap_charge', FILTER_VALIDATE_FLOAT); 
-    // Correctly get boolean from checkbox '1' or '0'
     $isSwapIncluded = filter_input(INPUT_POST, 'is_swap_included', FILTER_VALIDATE_INT) === 1; 
+
     $discount = filter_input(INPUT_POST, 'discount', FILTER_VALIDATE_FLOAT);
     $tax = filter_input(INPUT_POST, 'tax', FILTER_VALIDATE_FLOAT);
     $adminNotes = trim($_POST['admin_notes'] ?? '');
     $attachmentPath = null;
 
-    if (!$quoteId) {
-        throw new Exception('A valid Quote ID is required.');
+    if (!$quoteId || empty($serviceType) || !is_array($items)) {
+        throw new Exception('A valid Quote ID, service type, and items are required.');
     }
     
-    if ($quotedPrice === false || $quotedPrice < 0) { // Allow 0 for quotedPrice if needed, but not negative
-        throw new Exception('A valid main quoted price is required (must be 0 or greater).');
+    // Set quotedPrice based on service type
+    if ($serviceType === 'equipment_rental') {
+        if ($basePrice === false || $basePrice < 0) {
+            throw new Exception('A valid Base Price is required for equipment rental (must be 0 or greater).');
+        }
+        $quotedPrice = $basePrice;
+    } elseif ($serviceType === 'junk_removal') {
+        if ($totalCost === false || $totalCost < 0) {
+            throw new Exception('A valid Total Cost is required for junk removal (must be 0 or greater).');
+        }
+        $quotedPrice = $totalCost; // For junk removal, 'quoted_price' column stores the 'Total Cost'
+        // Set other equipment-specific charges to null/0 for junk removal
+        $dailyRate = 0; $relocationCharge = 0; $isRelocationIncluded = 0; $swapCharge = 0; $isSwapIncluded = 0;
+    } else {
+        throw new Exception('Unsupported service type.');
     }
-    
+
+    $conn->begin_transaction();
+
+    // Fetch customer info for email/notification
+    $stmt_fetch = $conn->prepare("SELECT u.id, u.email, u.first_name FROM users u JOIN quotes q ON u.id = q.user_id WHERE q.id = ?");
+    $stmt_fetch->bind_param("i", $quoteId);
+    $stmt_fetch->execute();
+    $quote_user_data = $stmt_fetch->get_result()->fetch_assoc();
+    $stmt_fetch->close();
+    if (!$quote_user_data) throw new Exception('User for the quote not found.');
+
     // Handle file upload
     if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == UPLOAD_ERR_OK) {
         $uploadDir = __DIR__ . '/../../uploads/quote_attachments/';
@@ -103,26 +228,15 @@ function handleSubmitQuote($conn) {
     }
 
 
-    $conn->begin_transaction();
-
-    // Fetch customer info for email/notification
-    $stmt_fetch = $conn->prepare("SELECT u.id, u.email, u.first_name FROM users u JOIN quotes q ON u.id = q.user_id WHERE q.id = ?");
-    $stmt_fetch->bind_param("i", $quoteId);
-    $stmt_fetch->execute();
-    $quote_user_data = $stmt_fetch->get_result()->fetch_assoc();
-    $stmt_fetch->close();
-    if (!$quote_user_data) throw new Exception('User for the quote not found.');
-
     // 1. Update the quote in the database
-    // Ensure all relevant fields are saved to the 'quotes' table
     $stmt_update = $conn->prepare("UPDATE quotes SET status = 'quoted', quoted_price = ?, daily_rate = ?, relocation_charge = ?, is_relocation_included = ?, swap_charge = ?, is_swap_included = ?, discount = ?, tax = ?, admin_notes = ?, attachment_path = ? WHERE id = ?");
     $stmt_update->bind_param("dddiddddssi", 
         $quotedPrice, 
         $dailyRate, 
         $relocationCharge, 
-        $isRelocationIncluded, // bind as int (0 or 1)
+        $isRelocationIncluded, 
         $swapCharge, 
-        $isSwapIncluded,     // bind as int (0 or 1)
+        $isSwapIncluded,     
         $discount, 
         $tax, 
         $adminNotes, 
@@ -130,12 +244,17 @@ function handleSubmitQuote($conn) {
         $quoteId
     );
 
-    if (!$stmt_update->execute()) { // Check for execution success
+    if (!$stmt_update->execute()) { 
         throw new Exception('Failed to update quote in the database: ' . $stmt_update->error);
     }
     $stmt_update->close();
 
-    // 2. Prepare and send email notification
+    // 2. Update the item details (delete old, insert new)
+    deleteQuoteItemDetails($conn, $quoteId, $serviceType);
+    insertQuoteItemDetails($conn, $quoteId, $serviceType, $items);
+
+
+    // 3. Prepare and send email notification
     $customerEmail = $quote_user_data['email'];
     // Calculate final price for email ONLY based on quoted_price, discount, and tax
     $final_email_price = ($quotedPrice ?? 0) - ($discount ?? 0) + ($tax ?? 0);
@@ -144,7 +263,7 @@ function handleSubmitQuote($conn) {
     $template_vars = [
         'template_companyName' => getSystemSetting('company_name') ?? 'CAT Dump',
         'template_quoteId' => $quoteId,
-        'template_quotedPrice' => number_format($final_email_price, 2), // Use final calculated price for initial quote
+        'template_quotedPrice' => number_format($final_email_price, 2), 
         'template_adminNotes' => $adminNotes,
         'template_customerQuoteLink' => "https://{$_SERVER['HTTP_HOST']}/customer/dashboard.php#quotes?quote_id={$quoteId}"
     ];
@@ -154,7 +273,7 @@ function handleSubmitQuote($conn) {
     $emailBody = ob_get_clean();
     sendEmail($customerEmail, "Your Quote #Q{$quoteId} is Ready!", $emailBody);
 
-    // 3. Create a system notification for the user
+    // 4. Create a system notification for the user
     $notification_message = "Your quote #{$quoteId} is ready! The quoted price is $" . number_format($final_email_price, 2) . ".";
     $notification_link = "quotes?quote_id={$quoteId}";
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'new_quote', ?, ?)");
@@ -183,7 +302,7 @@ function handleRejectQuote($conn, $quoteId) {
     // 1. Update quote status
     $stmt_update = $conn->prepare("UPDATE quotes SET status = 'rejected' WHERE id = ?");
     $stmt_update->bind_param("i", $quoteId);
-    if (!$stmt_update->execute()) { // Check for execution success
+    if (!$stmt_update->execute()) { 
         throw new Exception('Failed to update quote status: ' . $stmt_update->error);
     }
     $stmt_update->close();
@@ -197,7 +316,9 @@ function handleRejectQuote($conn, $quoteId) {
     $notification_link = "quotes?quote_id={$quoteId}";
     $stmt_notify = $conn->prepare("INSERT INTO notifications (user_id, type, message, link) VALUES (?, 'quote_rejected', ?, ?)");
     $stmt_notify->bind_param("iss", $quote_user_data['id'], $notification_message, $notification_link);
-    $stmt_notify->execute();
+    if (!$stmt_notify->execute()) {
+        error_log('Failed to create notification: ' . $stmt_notify->error);
+    }
     $stmt_notify->close();
 
     $conn->commit();
@@ -205,7 +326,7 @@ function handleRejectQuote($conn, $quoteId) {
 }
 
 /**
- * Resends the quote notification email to the customer.
+ * Re-sends the quote notification email to the customer.
  */
 function handleResendQuote($conn, $quoteId) {
     // Fetch current quote details to get quoted price and admin notes
@@ -232,7 +353,7 @@ function handleResendQuote($conn, $quoteId) {
     $template_vars = [
         'template_companyName' => getSystemSetting('company_name') ?? 'CAT Dump',
         'template_quoteId' => $quoteId,
-        'template_quotedPrice' => number_format($final_email_price, 2), // Use final calculated price
+        'template_quotedPrice' => number_format($final_email_price, 2), 
         'template_adminNotes' => $quote_data['admin_notes'],
         'template_customerQuoteLink' => "https://{$_SERVER['HTTP_HOST']}/customer/dashboard.php#quotes?quote_id={$quoteId}"
     ];
@@ -263,18 +384,44 @@ function handleDeleteBulk($conn) {
         $placeholders = implode(',', array_fill(0, count($quote_ids), '?'));
         $types = str_repeat('i', count($quote_ids));
         
-        $stmt = $conn->prepare("DELETE FROM quotes WHERE id IN ($placeholders)");
-        $stmt->bind_param($types, ...$quote_ids);
-        
-        if ($stmt->execute()) {
-            $conn->commit();
-            echo json_encode(['success' => true, 'message' => 'Selected quotes have been deleted.']);
-        } else {
-            throw new Exception("Failed to delete quotes.");
+        // 1. Get booking IDs associated with these invoices
+        $stmt_fetch_bookings = $conn->prepare("SELECT id FROM bookings WHERE invoice_id IN (SELECT id FROM invoices WHERE quote_id IN ($placeholders))");
+        $stmt_fetch_bookings->bind_param($types, ...$quote_ids);
+        $stmt_fetch_bookings->execute();
+        $result_bookings = $stmt_fetch_bookings->get_result();
+        $booking_ids_to_delete = [];
+        while($row = $result_bookings->fetch_assoc()) {
+            $booking_ids_to_delete[] = $row['id'];
         }
-        $stmt->close();
+        $stmt_fetch_bookings->close();
+
+        // 2. If there are associated bookings, delete them
+        if (!empty($booking_ids_to_delete)) {
+            $booking_placeholders = implode(',', array_fill(0, count($booking_ids_to_delete), '?'));
+            $booking_types = str_repeat('i', count($booking_ids_to_delete));
+            
+            $stmt_delete_bookings = $conn->prepare("DELETE FROM bookings WHERE id IN ($booking_placeholders)");
+            $stmt_delete_bookings->bind_param($booking_types, ...$booking_ids_to_delete);
+            if (!$stmt_delete_bookings->execute()) {
+                throw new Exception("Failed to delete associated bookings: " . $stmt_delete_bookings->error);
+            }
+            $stmt_delete_bookings->close();
+        }
+
+        // 3. Delete the quotes (this will cascade delete from junk_removal_details and quote_equipment_details if foreign keys are set up correctly)
+        $stmt_delete_quotes = $conn->prepare("DELETE FROM quotes WHERE id IN ($placeholders)");
+        $stmt_delete_quotes->bind_param($types, ...$quote_ids);
+        if (!$stmt_delete_quotes->execute()) {
+            throw new Exception("Failed to delete quotes: " . $stmt_delete_quotes->error);
+        }
+        $stmt_delete_quotes->close();
+
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'Selected quotes and their associated data have been deleted.']);
+
     } catch (Exception $e) {
         $conn->rollback();
-        throw $e; // Re-throw the exception to be caught by the main handler
+        error_log("Bulk delete error: " . $e->getMessage());
+        throw $e;
     }
 }

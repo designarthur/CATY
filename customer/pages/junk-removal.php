@@ -190,16 +190,28 @@ function getStatusBadgeClass($status) {
             <div id="junk-items-view-mode">
                 <h3 class="text-xl font-semibold text-gray-700 mb-4">Identified Junk Items</h3>
                 <?php if (!empty($junk_detail_view_data['junk_items_json'])): ?>
-                    <ul class="list-disc list-inside space-y-2 mb-6">
-                        <?php foreach ($junk_detail_view_data['junk_items_json'] as $item): ?>
-                            <li>
-                                <span class="font-medium"><?php echo htmlspecialchars($item['itemType'] ?? 'Unknown Item'); ?></span>
-                                (Quantity: <?php echo htmlspecialchars($item['quantity'] ?? 'N/A'); ?>,
-                                Est. Dimensions: <?php echo htmlspecialchars($item['estDimensions'] ?? 'N/A'); ?>,
-                                Est. Weight: <?php echo htmlspecialchars($item['estWeight'] ?? 'N/A'); ?>)
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
+                    <div class="overflow-x-auto mb-6">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item Type</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">Qty</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Est. Dims</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Est. Wt.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($junk_detail_view_data['junk_items_json'] as $item): ?>
+                                    <tr>
+                                        <td class="p-2 text-sm text-gray-900"><?php echo htmlspecialchars($item['itemType'] ?? 'Unknown Item'); ?></td>
+                                        <td class="p-2 text-sm text-gray-600"><?php echo htmlspecialchars($item['quantity'] ?? 'N/A'); ?></td>
+                                        <td class="p-2 text-sm text-gray-600"><?php echo htmlspecialchars($item['estDimensions'] ?? 'N/A'); ?></td>
+                                        <td class="p-2 text-sm text-gray-600"><?php echo htmlspecialchars($item['estWeight'] ?? 'N/A'); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 <?php else: ?>
                     <p class="text-gray-600 mb-6">No specific junk items detailed.</p>
                 <?php endif; ?>
