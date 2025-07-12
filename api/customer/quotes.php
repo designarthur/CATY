@@ -70,6 +70,12 @@ try {
             }
             $response = handleRejectQuote($conn, $quote_id, $user_id);
             break;
+        case 'submit_draft_quote':
+             if ($quote['status'] !== 'customer_draft') {
+                throw new Exception('This quote is not a draft and cannot be submitted.');
+            }
+            $response = handleSubmitDraftQuote($conn, $quote_id, $user_id);
+            break;
         default:
             throw new Exception('Invalid action specified.');
     }
@@ -87,6 +93,28 @@ try {
 }
 
 // --- Handler Functions ---
+
+/**
+ * Handles submitting a draft quote, updating its status to 'pending'.
+ */
+function handleSubmitDraftQuote($conn, $quote_id, $user_id) {
+    // Additional details from the form can be processed here if needed,
+    // for now, we'll just update the status.
+    $stmt = $conn->prepare("UPDATE quotes SET status = 'pending' WHERE id = ? AND user_id = ? AND status = 'customer_draft'");
+    $stmt->bind_param("ii", $quote_id, $user_id);
+
+    if ($stmt->execute()) {
+        if ($stmt->affected_rows > 0) {
+            // Optionally, notify admin about the new quote submission
+            return ['success' => true, 'message' => 'Your quote request has been successfully submitted to our team for review.'];
+        } else {
+            return ['success' => false, 'message' => 'Could not submit quote. It might have been already submitted.'];
+        }
+    } else {
+        throw new Exception('Failed to submit quote request.');
+    }
+}
+
 
 /**
  * Handles accepting a quote, which creates a new invoice and populates its line items.

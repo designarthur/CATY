@@ -250,9 +250,10 @@ PROMPT;
     $apiResponse = getOpenAIResponse($messages, $tools, $openaiApiKey, $aiModel);
     $responseMessage = $apiResponse['choices'][0]['message'];
     $aiResponseText = $responseMessage['content'] ?? "I'm sorry, I'm having trouble processing that. Could you try rephrasing?";
+    
+    $jsonResponse = ['success' => true, 'ai_response' => trim($aiResponseText), 'is_info_collected' => false];
 
     // --- Process AI Response ---
-    $isInfoCollected = false;
     if (isset($responseMessage['tool_calls'])) {
         $toolCall = $responseMessage['tool_calls'][0]['function'];
         if ($toolCall['name'] === 'submit_quote_request') {
@@ -326,8 +327,12 @@ PROMPT;
                 }
 
                 $conn->commit();
-                $aiResponseText = "Thank you! Your quote request (#Q{$quoteId}) has been successfully submitted. Our team will review the details and send you the best price within the hour.";
-                $isInfoCollected = true;
+                $aiResponseText = "Great! I've created a draft of your request. Please review the details on the next page and submit it to our team for a final quote.";
+                
+                $jsonResponse['is_info_collected'] = true;
+                $jsonResponse['ai_response'] = $aiResponseText;
+                $jsonResponse['redirect_url'] = "/customer/dashboard.php#junk-removal?quote_id=" . $quoteId;
+                
                 unset($_SESSION['conversation_id']);
                 
             } catch (mysqli_sql_exception $e) {
@@ -350,7 +355,7 @@ PROMPT;
     $stmt_save_ai->execute();
     $stmt_save_ai->close();
 
-    echo json_encode(['success' => true, 'ai_response' => trim($aiResponseText), 'is_info_collected' => $isInfoCollected]);
+    echo json_encode($jsonResponse);
     
     exit;
 }

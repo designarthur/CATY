@@ -640,11 +640,17 @@ $conn->close();
                 addAIChatMessage(data.ai_response, 'ai');
 
                 if (data.is_info_collected) {
-                    addAIChatMessage("Your request has been submitted and your account updated! Our team will get back to you with a quote shortly.", 'ai');
-                    aiChatInput.value = '';
-                    aiChatInput.disabled = true;
-                    aiChatSendBtn.disabled = true;
-                    showToast("Service request submitted successfully! Check your dashboard for updates.", 'success');
+                    hideModal('ai-chat-modal'); // Hide the chat modal
+                    showToast("Redirecting to your quote preview...", 'success');
+                    
+                    // Redirect to the junk removal page with the new quote ID
+                    const urlParams = new URLSearchParams(new URL(data.redirect_url, window.location.origin).search);
+                    const quoteId = urlParams.get('quote_id');
+                    
+                    setTimeout(() => {
+                        window.loadCustomerSection('junk-removal', { quote_id: quoteId });
+                    }, 1500); // Delay for toast visibility
+                    
                 } else {
                     aiChatInput.disabled = false;
                     aiChatSendBtn.disabled = false;
@@ -707,7 +713,6 @@ $conn->close();
 
     <?php include __DIR__ . '/includes/footer.php'; // Includes modals and global JS functions ?>
     
-    <!-- Hidden elements for video frame extraction -->
     <video id="hiddenVideo" style="display:none;" controls></video>
     <canvas id="hiddenCanvas" style="display:none;"></canvas>
 
@@ -842,7 +847,7 @@ $conn->close();
                     // Handle "Back to Invoice Details" button click (from payment form)
                     else if (event.target.closest('#payment-form-view button.bg-gray-200')) { // Targeting the back button specifically
                         // Assuming this button's onclick is now removed, or we just need its class/id
-                        // It currently has onclick="hidePaymentForm()" which should now be handled via delegation
+                        // It currently has onclick="hidePaymentForm()" which should now be handled by delegation
                         // Make sure its onclick is removed in invoices.php (if it isn't already handled by delegation below)
                         // If its onclick is kept, then window.hidePaymentForm needs to be global.
                         // For consistency, let's keep it handled by delegation.

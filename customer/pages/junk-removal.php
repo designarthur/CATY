@@ -76,8 +76,8 @@ if ($requested_quote_id_for_detail) {
     $result_detail = $stmt_detail->get_result();
     if ($result_detail->num_rows > 0) {
         $junk_detail_view_data = $result_detail->fetch_assoc();
-        $junk_detail_view_data['junk_items_json'] = json_decode($junk_detail_view_data['junk_items_json'], true);
-        $junk_detail_view_data['media_urls_json'] = json_decode($junk_detail_view_data['media_urls_json'], true);
+        $junk_detail_view_data['junk_items_json'] = json_decode($junk_detail_view_data['junk_items_json'] ?? '[]', true); // Ensure it's an array
+        $junk_detail_view_data['media_urls_json'] = json_decode($junk_detail_view_data['media_urls_json'] ?? '[]', true); // Ensure it's an array
     }
     $stmt_detail->close();
 }
@@ -98,6 +98,8 @@ function getStatusBadgeClass($status) {
         case 'rejected':
         case 'cancelled':
             return 'bg-red-100 text-red-700';
+        case 'customer_draft': // Added for new draft status
+            return 'bg-gray-200 text-gray-700';
         default:
             return 'bg-gray-100 text-gray-700';
     }
@@ -155,6 +157,8 @@ function getStatusBadgeClass($status) {
                                 <button class="text-blue-600 hover:text-blue-900 view-junk-request-details" data-quote-id="<?php echo htmlspecialchars($request['quote_id']); ?>">View Details</button>
                                 <?php if ($request['status'] === 'quoted'): ?>
                                     <button class="ml-3 text-green-600 hover:text-green-900" onclick="window.loadCustomerSection('invoices', {quote_id: <?php echo $request['quote_id']; ?>});">Review Quote</button>
+                                <?php elseif ($request['status'] === 'customer_draft'): ?>
+                                     <button class="ml-3 text-orange-600 hover:text-orange-900 edit-junk-request-details" data-quote-id="<?php echo htmlspecialchars($request['quote_id']); ?>">Edit Draft</button>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -183,21 +187,43 @@ function getStatusBadgeClass($status) {
                 <div class="md:col-span-2"><span class="font-medium">Driver Instructions:</span> <?php echo htmlspecialchars($junk_detail_view_data['driver_instructions'] ?? 'None'); ?></div>
             </div>
 
-            <h3 class="text-xl font-semibold text-gray-700 mb-4">Identified Junk Items</h3>
-            <?php if (!empty($junk_detail_view_data['junk_items_json'])): ?>
-                <ul class="list-disc list-inside space-y-2 mb-6">
-                    <?php foreach ($junk_detail_view_data['junk_items_json'] as $item): ?>
-                        <li>
-                            <span class="font-medium"><?php echo htmlspecialchars($item['itemType'] ?? 'Unknown Item'); ?></span>
-                            (Quantity: <?php echo htmlspecialchars($item['quantity'] ?? 'N/A'); ?>,
-                            Est. Dimensions: <?php echo htmlspecialchars($item['estDimensions'] ?? 'N/A'); ?>,
-                            Est. Weight: <?php echo htmlspecialchars($item['estWeight'] ?? 'N/A'); ?>)
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-            <?php else: ?>
-                <p class="text-gray-600 mb-6">No specific junk items detailed.</p>
-            <?php endif; ?>
+            <div id="junk-items-view-mode">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4">Identified Junk Items</h3>
+                <?php if (!empty($junk_detail_view_data['junk_items_json'])): ?>
+                    <ul class="list-disc list-inside space-y-2 mb-6">
+                        <?php foreach ($junk_detail_view_data['junk_items_json'] as $item): ?>
+                            <li>
+                                <span class="font-medium"><?php echo htmlspecialchars($item['itemType'] ?? 'Unknown Item'); ?></span>
+                                (Quantity: <?php echo htmlspecialchars($item['quantity'] ?? 'N/A'); ?>,
+                                Est. Dimensions: <?php echo htmlspecialchars($item['estDimensions'] ?? 'N/A'); ?>,
+                                Est. Weight: <?php echo htmlspecialchars($item['estWeight'] ?? 'N/A'); ?>)
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php else: ?>
+                    <p class="text-gray-600 mb-6">No specific junk items detailed.</p>
+                <?php endif; ?>
+            </div>
+
+            <div id="junk-items-edit-mode" class="hidden">
+                <h3 class="text-xl font-semibold text-gray-700 mb-4">Edit Junk Items</h3>
+                <table class="min-w-full divide-y divide-gray-200 mb-4" id="editable-junk-items-table">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item Type</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">Qty</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Est. Dims</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Est. Wt.</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        </tbody>
+                </table>
+                <button type="button" id="add-junk-item-btn" class="mb-4 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm hover:bg-blue-200">
+                    <i class="fas fa-plus-circle mr-2"></i>Add Item
+                </button>
+            </div>
 
             <div class="mb-6 pb-6 border-b border-gray-200">
                 <p class="mb-2"><span class="font-medium">Recommended Dumpster Size:</span> <?php echo htmlspecialchars($junk_detail_view_data['recommended_dumpster_size'] ?? 'N/A'); ?></p>
@@ -230,21 +256,36 @@ function getStatusBadgeClass($status) {
                 <p class="text-gray-600 mb-6">No media uploaded for this request.</p>
             <?php endif; ?>
 
-            <?php if ($junk_detail_view_data['status'] === 'quoted'): ?>
-                <div class="text-right mt-6">
-                    <p class="text-xl font-bold text-gray-800 mb-3">Quoted Price: <span class="text-green-600">$<?php echo number_format($junk_detail_view_data['quoted_price'], 2); ?></span></p>
-                    <button class="py-2 px-5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-lg" onclick="window.loadCustomerSection('invoices', {quote_id: <?php echo $junk_detail_view_data['quote_id']; ?>});">
-                        <i class="fas fa-hand-holding-usd mr-2"></i>Review & Pay Quote
+            <div class="flex justify-end mt-6 space-x-3">
+                <?php if ($junk_detail_view_data['status'] === 'customer_draft'): ?>
+                    <button id="edit-junk-items-btn" class="py-2 px-5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200 shadow-lg">
+                        <i class="fas fa-edit mr-2"></i>Edit Items
                     </button>
-                </div>
-            <?php elseif ($junk_detail_view_data['status'] === 'converted_to_booking'): ?>
-                <div class="text-center mt-6">
-                    <p class="text-xl font-bold text-green-600 mb-3"><i class="fas fa-check-circle mr-2"></i>This request has been successfully converted to a booking!</p>
-                    <button class="py-2 px-5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-lg" onclick="window.loadCustomerSection('bookings', {});">
-                        <i class="fas fa-book-open mr-2"></i>View Bookings
+                    <button id="save-junk-items-btn" class="py-2 px-5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-lg hidden">
+                        <i class="fas fa-save mr-2"></i>Save Changes
                     </button>
-                </div>
-            <?php endif; ?>
+                    <button id="cancel-edit-junk-items-btn" class="py-2 px-5 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-colors duration-200 shadow-lg hidden">
+                        Cancel
+                    </button>
+                    <button id="submit-junk-request-btn" class="py-2 px-5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-lg">
+                        <i class="fas fa-paper-plane mr-2"></i>Submit Request
+                    </button>
+                <?php elseif ($junk_detail_view_data['status'] === 'quoted'): ?>
+                    <div class="text-right mt-6">
+                        <p class="text-xl font-bold text-gray-800 mb-3">Quoted Price: <span class="text-green-600">$<?php echo number_format($junk_detail_view_data['quoted_price'], 2); ?></span></p>
+                        <button class="py-2 px-5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-lg" onclick="window.loadCustomerSection('invoices', {quote_id: <?php echo $junk_detail_view_data['quote_id']; ?>});">
+                            <i class="fas fa-hand-holding-usd mr-2"></i>Review & Pay Quote
+                        </button>
+                    </div>
+                <?php elseif ($junk_detail_view_data['status'] === 'converted_to_booking'): ?>
+                    <div class="text-center mt-6">
+                        <p class="text-xl font-bold text-green-600 mb-3"><i class="fas fa-check-circle mr-2"></i>This request has been successfully converted to a booking!</p>
+                        <button class="py-2 px-5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-lg" onclick="window.loadCustomerSection('bookings', {});">
+                            <i class="fas fa-book-open mr-2"></i>View Bookings
+                        </button>
+                    </div>
+                <?php endif; ?>
+            </div>
         </div>
     <?php else: ?>
         <p class="text-center text-gray-600">Junk removal request details not found or invalid ID.</p>
@@ -257,27 +298,224 @@ function getStatusBadgeClass($status) {
 </div>
 
 <script>
-    // Function to show the junk removal request detail view
-    function showJunkRemovalDetails(quoteId) {
-        // Reload the junk-removal page with the specific quote_id parameter
-        window.loadCustomerSection('junk-removal', { quote_id: quoteId });
-    }
+    // Encapsulate JavaScript in an IIFE to prevent global variable conflicts
+    (function() {
+        // Function to show the junk removal request detail view
+        function showJunkRemovalDetails(quoteId) {
+            // Reload the junk-removal page with the specific quote_id parameter
+            window.loadCustomerSection('junk-removal', { quote_id: quoteId });
+        }
 
-    // Function to hide the junk removal detail view and show the list
-    function hideJunkRemovalDetails() {
-        window.loadCustomerSection('junk-removal'); // Loads the junk-removal page without a specific ID, showing the list
-    }
+        // Function to hide the junk removal detail view and show the list
+        function hideJunkRemovalDetails() {
+            window.loadCustomerSection('junk-removal'); // Loads the junk-removal page without a specific ID, showing the list
+        }
 
-    // Attach listeners for "View Details" buttons in the junk removal list
-    document.querySelectorAll('.view-junk-request-details').forEach(button => {
-        button.addEventListener('click', function() {
-            showJunkRemovalDetails(this.dataset.quoteId);
+        // Attach listeners for "View Details" buttons in the junk removal list
+        document.querySelectorAll('.view-junk-request-details').forEach(button => {
+            button.addEventListener('click', function() {
+                showJunkRemovalDetails(this.dataset.quoteId);
+            });
         });
-    });
+        
+        // Attach listeners for "Edit Draft" buttons in the junk removal list
+        document.querySelectorAll('.edit-junk-request-details').forEach(button => {
+            button.addEventListener('click', function() {
+                showJunkRemovalDetails(this.dataset.quoteId);
+                // After loading details, trigger edit mode
+                // Use a small delay to ensure the DOM is fully updated after loadCustomerSection
+                setTimeout(() => {
+                    document.getElementById('edit-junk-items-btn')?.click();
+                }, 100); 
+            });
+        });
 
-    // Function to show image in a modal
-    function showImageModal(imageUrl) {
-        document.getElementById('image-modal-content').src = imageUrl;
-        showModal('image-modal');
-    }
+        // Function to show image in a modal
+        function showImageModal(imageUrl) {
+            document.getElementById('image-modal-content').src = imageUrl;
+            window.showModal('image-modal');
+        }
+
+        // --- New JavaScript for GUI-based Editing ---
+        const junkItemsViewMode = document.getElementById('junk-items-view-mode');
+        const junkItemsEditMode = document.getElementById('junk-items-edit-mode');
+        const editJunkItemsBtn = document.getElementById('edit-junk-items-btn');
+        const saveJunkItemsBtn = document.getElementById('save-junk-items-btn');
+        const cancelEditJunkItemsBtn = document.getElementById('cancel-edit-junk-items-btn');
+        const addJunkItemBtn = document.getElementById('add-junk-item-btn');
+        const editableJunkItemsTableBody = document.getElementById('editable-junk-items-table')?.querySelector('tbody');
+        const submitJunkRequestBtn = document.getElementById('submit-junk-request-btn');
+
+        let originalJunkItems = []; // To store the original state for 'Cancel'
+
+        function renderEditableJunkItems(items) {
+            if (!editableJunkItemsTableBody) return;
+            editableJunkItemsTableBody.innerHTML = ''; // Clear existing rows
+            items.forEach(item => {
+                addJunkItemRow(item);
+            });
+        }
+
+        function addJunkItemRow(item = {}) {
+            if (!editableJunkItemsTableBody) return;
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td class="p-2"><input type="text" class="w-full p-2 border rounded" value="${item.itemType ?? ''}" placeholder="e.g., Sofa" required></td>
+                <td class="p-2"><input type="number" class="w-full p-2 border rounded" value="${item.quantity ?? 1}" min="1" required></td>
+                <td class="p-2"><input type="text" class="w-full p-2 border rounded" value="${item.estDimensions ?? ''}" placeholder="e.g., 6x3x3 ft"></td>
+                <td class="p-2"><input type="text" class="w-full p-2 border rounded" value="${item.estWeight ?? ''}" placeholder="e.g., 100 lbs"></td>
+                <td class="p-2 text-center"><button type="button" class="text-red-500 hover:text-red-700 remove-junk-item-btn">&times;</button></td>
+            `;
+            editableJunkItemsTableBody.appendChild(newRow);
+            newRow.querySelector('.remove-junk-item-btn')?.addEventListener('click', (e) => e.target.closest('tr').remove());
+        }
+
+        function collectEditedJunkItems() {
+            const items = [];
+            if (!editableJunkItemsTableBody) return items;
+            editableJunkItemsTableBody.querySelectorAll('tr').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                items.push({
+                    itemType: inputs[0].value.trim(),
+                    quantity: parseInt(inputs[1].value) || 1,
+                    estDimensions: inputs[2].value.trim(),
+                    estWeight: inputs[3].value.trim()
+                });
+            });
+            return items;
+        }
+
+        // Event Listeners for Edit Mode
+        if(editJunkItemsBtn) {
+            editJunkItemsBtn.addEventListener('click', () => {
+                junkItemsViewMode.classList.add('hidden');
+                junkItemsEditMode.classList.remove('hidden');
+                editJunkItemsBtn.classList.add('hidden');
+                saveJunkItemsBtn.classList.remove('hidden');
+                cancelEditJunkItemsBtn.classList.remove('hidden');
+                if(submitJunkRequestBtn) submitJunkRequestBtn.classList.add('hidden'); // Hide submit if editing
+                
+                // Populate editable table with current data
+                // Ensure junk_detail_view_data is accessible and defined when this script runs
+                const currentItems = <?php echo json_encode($junk_detail_view_data['junk_items_json'] ?? []); ?>;
+                originalJunkItems = JSON.parse(JSON.stringify(currentItems)); // Deep copy
+                renderEditableJunkItems(currentItems);
+            });
+        }
+
+        if(cancelEditJunkItemsBtn) {
+            cancelEditJunkItemsBtn.addEventListener('click', () => {
+                // Reload the section to effectively cancel edits and revert to the saved state
+                const currentQuoteId = <?php echo htmlspecialchars($junk_detail_view_data['quote_id'] ?? 'null'); ?>;
+                if (currentQuoteId) {
+                    window.loadCustomerSection('junk-removal', { quote_id: currentQuoteId });
+                } else {
+                    window.loadCustomerSection('junk-removal');
+                }
+            });
+        }
+
+        if(addJunkItemBtn) {
+            addJunkItemBtn.addEventListener('click', () => {
+                addJunkItemRow(); // Add an empty row
+            });
+        }
+
+        if(saveJunkItemsBtn) {
+            saveJunkItemsBtn.addEventListener('click', async () => {
+                const editedItems = collectEditedJunkItems();
+                const quoteId = <?php echo htmlspecialchars($junk_detail_view_data['quote_id'] ?? 'null'); ?>;
+
+                if (editedItems.some(item => !item.itemType.trim())) {
+                    window.showToast('Item Type cannot be empty for any item.', 'error');
+                    return;
+                }
+                if (editedItems.length === 0) {
+                     window.showToast('Please add at least one junk item.', 'error');
+                     return;
+                }
+
+                window.showConfirmationModal(
+                    'Save Changes',
+                    'Are you sure you want to save these changes to your junk removal request?',
+                    async (confirmed) => {
+                        if (confirmed) {
+                            window.showToast('Saving items...', 'info');
+                            const formData = new FormData();
+                            formData.append('action', 'update_junk_items'); // New action for backend
+                            formData.append('quote_id', quoteId);
+                            formData.append('junk_items', JSON.stringify(editedItems)); // Send as JSON string
+
+                            try {
+                                const response = await fetch('/api/customer/junk_removal_update.php', { // New API endpoint
+                                    method: 'POST',
+                                    body: formData
+                                });
+                                const result = await response.json();
+
+                                if (result.success) {
+                                    window.showToast(result.message, 'success');
+                                    // Reload details view to show updated items in view mode
+                                    window.loadCustomerSection('junk-removal', { quote_id: quoteId });
+                                } else {
+                                    window.showToast(result.message, 'error');
+                                }
+                            } catch (error) {
+                                console.error('Save junk items API Error:', error);
+                                window.showToast('An error occurred while saving. Please try again.', 'error');
+                            }
+                        }
+                    },
+                    'Save',
+                    'bg-green-600'
+                );
+            });
+        }
+
+        // Handle "Submit Request" button for customer_draft
+        if(submitJunkRequestBtn) {
+            submitJunkRequestBtn.addEventListener('click', () => {
+                const quoteId = <?php echo htmlspecialchars($junk_detail_view_data['quote_id'] ?? 'null'); ?>;
+                const currentStatus = "<?php echo htmlspecialchars($junk_detail_view_data['status'] ?? ''); ?>";
+
+                if (currentStatus !== 'customer_draft') {
+                    window.showToast('This request is not in a draft state and cannot be re-submitted.', 'error');
+                    return;
+                }
+                
+                window.showConfirmationModal(
+                    'Submit Request for Quote',
+                    'Are you sure you want to submit this request for a quote from our team?',
+                    async (confirmed) => {
+                        if (confirmed) {
+                            window.showToast('Submitting request...', 'info');
+                            const formData = new FormData();
+                            formData.append('action', 'submit_customer_draft'); // New action for backend
+                            formData.append('quote_id', quoteId);
+
+                            try {
+                                const response = await fetch('/api/customer/junk_removal_update.php', { // New API endpoint
+                                    method: 'POST',
+                                    body: formData
+                                });
+                                const result = await response.json();
+
+                                if (result.success) {
+                                    window.showToast(result.message, 'success');
+                                    window.loadCustomerSection('junk-removal', { quote_id: quoteId }); // Reload
+                                } else {
+                                    window.showToast(result.message, 'error');
+                                }
+                            } catch (error) {
+                                console.error('Submit draft API Error:', error);
+                                window.showToast('An error occurred during submission. Please try again.', 'error');
+                            }
+                        }
+                    },
+                    'Submit',
+                    'bg-blue-600'
+                );
+            });
+        }
+    })(); // End of IIFE
 </script>
