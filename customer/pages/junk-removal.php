@@ -154,7 +154,7 @@ function getStatusBadgeClass($status) {
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <button class="text-blue-600 hover:text-blue-900 view-junk-request-details" data-quote-id="<?php echo htmlspecialchars($request['quote_id']); ?>">View Details</button>
                                 <?php if ($request['status'] === 'quoted'): ?>
-                                    <button class="ml-3 text-green-600 hover:text-green-900" onclick="loadSection('invoices', {quote_id: <?php echo $request['quote_id']; ?>});">Review Quote</button>
+                                    <button class="ml-3 text-green-600 hover:text-green-900" onclick="window.loadCustomerSection('invoices', {quote_id: <?php echo $request['quote_id']; ?>});">Review Quote</button>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -233,14 +233,14 @@ function getStatusBadgeClass($status) {
             <?php if ($junk_detail_view_data['status'] === 'quoted'): ?>
                 <div class="text-right mt-6">
                     <p class="text-xl font-bold text-gray-800 mb-3">Quoted Price: <span class="text-green-600">$<?php echo number_format($junk_detail_view_data['quoted_price'], 2); ?></span></p>
-                    <button class="py-2 px-5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-lg" onclick="loadSection('invoices', {quote_id: <?php echo $junk_detail_view_data['quote_id']; ?>});">
+                    <button class="py-2 px-5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 shadow-lg" onclick="window.loadCustomerSection('invoices', {quote_id: <?php echo $junk_detail_view_data['quote_id']; ?>});">
                         <i class="fas fa-hand-holding-usd mr-2"></i>Review & Pay Quote
                     </button>
                 </div>
             <?php elseif ($junk_detail_view_data['status'] === 'converted_to_booking'): ?>
                 <div class="text-center mt-6">
                     <p class="text-xl font-bold text-green-600 mb-3"><i class="fas fa-check-circle mr-2"></i>This request has been successfully converted to a booking!</p>
-                    <button class="py-2 px-5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-lg" onclick="loadSection('bookings', {});">
+                    <button class="py-2 px-5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-lg" onclick="window.loadCustomerSection('bookings', {});">
                         <i class="fas fa-book-open mr-2"></i>View Bookings
                     </button>
                 </div>
@@ -260,12 +260,12 @@ function getStatusBadgeClass($status) {
     // Function to show the junk removal request detail view
     function showJunkRemovalDetails(quoteId) {
         // Reload the junk-removal page with the specific quote_id parameter
-        loadSection('junk-removal', { quote_id: quoteId });
+        window.loadCustomerSection('junk-removal', { quote_id: quoteId });
     }
 
     // Function to hide the junk removal detail view and show the list
     function hideJunkRemovalDetails() {
-        loadSection('junk-removal'); // Loads the junk-removal page without a specific ID, showing the list
+        window.loadCustomerSection('junk-removal'); // Loads the junk-removal page without a specific ID, showing the list
     }
 
     // Attach listeners for "View Details" buttons in the junk removal list
