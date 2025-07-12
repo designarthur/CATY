@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Jul 11, 2025 at 11:41 AM
+-- Generation Time: Jul 11, 2025 at 07:50 PM
 -- Server version: 8.0.42-0ubuntu0.22.04.1
 -- PHP Version: 7.4.33
 
@@ -86,12 +86,13 @@ INSERT INTO `bookings` (`id`, `invoice_id`, `user_id`, `vendor_id`, `booking_num
 (2, 5, 1, NULL, 'BOOK-C2FCFCAC', 'equipment_rental', 'delivered', '2025-07-11', NULL, 'Dallas, Texas', NULL, NULL, NULL, 0, 0, NULL, NULL, 100.00, NULL, '2025-07-11 14:00:48', '2025-07-11 14:07:49', NULL, NULL),
 (3, 6, 1, NULL, 'BOOK-CF050AA2', 'equipment_rental', 'delivered', '2025-07-11', NULL, 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 497.00, NULL, '2025-07-11 14:10:49', '2025-07-11 14:11:10', NULL, NULL),
 (4, 7, 1, NULL, 'BOOK-B4B6CC43', 'equipment_rental', 'delivered', '2025-07-11', NULL, 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 112.00, NULL, '2025-07-11 14:23:44', '2025-07-11 14:24:02', NULL, NULL),
-(5, 8, 1, NULL, 'BOOK-334C2310', 'equipment_rental', 'delivered', '2025-07-11', NULL, 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 146.00, NULL, '2025-07-11 14:35:58', '2025-07-11 14:36:13', NULL, NULL),
+(5, 8, 1, NULL, 'BOOK-334C2310', 'equipment_rental', 'delivered', '2025-07-11', NULL, 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 146.00, NULL, '2025-07-11 14:35:58', '2025-07-11 17:02:24', NULL, NULL),
 (6, 11, 1, NULL, 'BOOK-7352060F', 'equipment_rental', 'relocated', '2025-07-11', NULL, 'Dallas, Texas', NULL, NULL, NULL, 0, 0, NULL, NULL, 1008.00, NULL, '2025-07-11 14:56:20', '2025-07-11 15:19:06', NULL, NULL),
 (7, 14, 1, NULL, 'BOOK-3367E7', 'equipment_rental', 'delivered', '2025-07-11', NULL, 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 20.00, NULL, '2025-07-11 15:50:55', '2025-07-11 15:55:41', NULL, NULL),
 (8, 15, 1, NULL, 'BOOK-41440E', 'equipment_rental', 'scheduled', '2025-07-11', NULL, 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 1501.00, NULL, '2025-07-11 16:27:53', '2025-07-11 16:27:53', NULL, NULL),
 (9, 16, 1, NULL, 'BOOK-56F5A8', 'equipment_rental', 'scheduled', '2025-07-11', NULL, 'dallas texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 1797.00, NULL, '2025-07-11 16:33:59', '2025-07-11 16:33:59', NULL, NULL),
-(10, 17, 1, NULL, 'BOOK-D762B7', 'equipment_rental', 'scheduled', '2025-07-11', NULL, 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 1001.00, NULL, '2025-07-11 16:39:02', '2025-07-11 16:39:02', NULL, NULL);
+(10, 17, 1, NULL, 'BOOK-D762B7', 'equipment_rental', 'delivered', '2025-07-11', NULL, 'Dallas, Texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 1001.00, NULL, '2025-07-11 16:39:02', '2025-07-11 17:07:42', NULL, NULL),
+(11, 18, 1, NULL, 'BOOK-484480', 'equipment_rental', 'delivered', '2025-07-11', NULL, 'dallas texas 7110', NULL, NULL, NULL, 0, 0, NULL, NULL, 302.00, NULL, '2025-07-11 16:56:48', '2025-07-11 17:03:36', NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -109,6 +110,16 @@ CREATE TABLE `booking_charges` (
   `created_by_admin_id` int DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `booking_charges`
+--
+
+INSERT INTO `booking_charges` (`id`, `booking_id`, `invoice_id`, `charge_type`, `amount`, `description`, `created_by_admin_id`, `created_at`) VALUES
+(1, 5, 20, 'rental_extension', 20.00, 'Rental extension of 2 days approved by admin.', 3, '2025-07-11 17:03:57'),
+(2, 5, 21, 'rental_extension', 20.00, 'tental', 3, '2025-07-11 17:08:23'),
+(3, 10, 22, 'rental_extension', 100.00, 'Rental extension of 10 days approved by admin.', 3, '2025-07-11 17:09:06'),
+(4, 10, 23, 'tonnage_overage', 50.00, '2 ton extra', 3, '2025-07-11 17:14:33');
 
 -- --------------------------------------------------------
 
@@ -133,7 +144,9 @@ CREATE TABLE `booking_extension_requests` (
 --
 
 INSERT INTO `booking_extension_requests` (`id`, `booking_id`, `user_id`, `requested_days`, `status`, `invoice_id`, `admin_notes`, `created_at`, `updated_at`) VALUES
-(1, 5, 1, 2, 'pending', NULL, NULL, '2025-07-11 14:36:36', '2025-07-11 14:36:36');
+(1, 5, 1, 2, 'approved', 20, NULL, '2025-07-11 14:36:36', '2025-07-11 17:03:57'),
+(2, 11, 1, 10, 'pending', NULL, NULL, '2025-07-11 17:03:48', '2025-07-11 17:03:48'),
+(3, 10, 1, 10, 'approved', 22, NULL, '2025-07-11 17:07:57', '2025-07-11 17:09:06');
 
 -- --------------------------------------------------------
 
@@ -165,7 +178,16 @@ INSERT INTO `booking_status_history` (`id`, `booking_id`, `status`, `status_time
 (12, 6, 'relocation_requested', '2025-07-11 15:14:53', 'Customer requested Relocation for Booking #BOOK-7352060F. Payment required. Status updated to relocation_requested.'),
 (13, 6, 'assigned', '2025-07-11 15:16:57', 'Status updated to Assigned by admin.'),
 (14, 6, 'relocated', '2025-07-11 15:19:06', 'Status updated to Relocated by admin.'),
-(15, 7, 'delivered', '2025-07-11 15:55:41', 'Status updated to Delivered by admin.');
+(15, 7, 'delivered', '2025-07-11 15:55:41', 'Status updated to Delivered by admin.'),
+(16, 11, 'delivered', '2025-07-11 16:57:30', 'Status updated to Delivered by admin.'),
+(17, 11, 'relocation_requested', '2025-07-11 16:57:59', 'Customer requested Relocation for Booking #BOOK-484480. Payment required. Status updated to relocation_requested.'),
+(18, 5, 'relocated', '2025-07-11 16:58:40', 'Status updated to Relocated by admin.'),
+(19, 5, 'swapped', '2025-07-11 16:59:13', 'Status updated to Swapped by admin.'),
+(20, 5, 'delivered', '2025-07-11 17:02:24', 'Status updated to Delivered by admin.'),
+(21, 11, 'relocated', '2025-07-11 17:03:20', 'Status updated to Relocated by admin.'),
+(22, 11, 'delivered', '2025-07-11 17:03:36', 'Status updated to Delivered by admin.'),
+(23, 5, 'extended', '2025-07-11 17:04:21', 'Booking extended by 2 days due to paid invoice #INV-EXT-466BF4.'),
+(24, 10, 'delivered', '2025-07-11 17:07:42', 'Status updated to Delivered by admin.');
 
 -- --------------------------------------------------------
 
@@ -273,7 +295,162 @@ INSERT INTO `chat_messages` (`id`, `conversation_id`, `role`, `content`, `create
 (83, 15, 'user', 'yes confirm', '2025-07-11 16:37:30'),
 (84, 15, 'assistant', 'Could you please specify whether you are a Residential or Commercial customer? Once I have that information, I will submit the quote request.', '2025-07-11 16:37:30'),
 (85, 15, 'user', 'residential', '2025-07-11 16:37:38'),
-(86, 15, 'assistant', 'Thank you! Your quote request (#Q14) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-11 16:37:38');
+(86, 15, 'assistant', 'Thank you! Your quote request (#Q14) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-11 16:37:38'),
+(87, 16, 'user', 'i need 2 15 yard dumpster and 1 20 yard dumpster and 2 temporary toilets, for 14 days, tomorrow, can deliver in morning, not a live load, not urgent, location is dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-11 16:55:06'),
+(88, 16, 'assistant', 'To create your service quote, I need to collect a few more details. \n\n1. What type of customer are you? (Residential or Commercial)\n2. Please provide a phone number for the contact. \n\nOnce I have those details, I can proceed with your quote request!', '2025-07-11 16:55:06'),
+(89, 16, 'user', 'residential 12121212112', '2025-07-11 16:55:22'),
+(90, 16, 'assistant', 'Thank you! Your quote request (#Q15) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-11 16:55:22'),
+(91, 17, 'user', 'how to upload', '2025-07-11 17:57:22'),
+(92, 17, 'assistant', 'To upload images or videos, please look for an attachment or upload button in your interface. This is typically represented by a paperclip icon or an option that says \"Upload\" or \"Attach.\" Once you\'ve located that, you can select the media files from your device that you wish to upload. \n\nIf you\'re having trouble or need more specific instructions, please let me know what platform you\'re using, and I\'ll do my best to assist you!', '2025-07-11 17:57:22'),
+(93, 17, 'user', 'i need junk removal', '2025-07-11 17:59:37'),
+(94, 17, 'assistant', 'I can help you with that! I\'ll need some details to create a service quote for your junk removal request:\n\n1. **Customer Type** (Residential or Commercial):\n2. **Customer Name**:\n3. **Customer Email**:\n4. **Customer Phone**:\n5. **Location** (full address):\n6. **Preferred Removal Date and Time**:\n7. **Description of the junk items** (if you have images or videos, please upload them, and I can analyze them):\n8. **Any additional comments or specific requests regarding the removal**:\n\nOnce I have this information, I\'ll be able to assist you further!', '2025-07-11 17:59:37'),
+(95, 17, 'user', 'i would like to upload', '2025-07-11 18:05:03'),
+(96, 17, 'assistant', 'Please go ahead and use the upload button or attachment option in your interface to select and upload your images or videos related to the junk items. Once the upload is complete, I\'ll analyze the media for you.\n\nLet me know when you\'ve finished uploading!', '2025-07-11 18:05:03'),
+(97, 17, 'user', 'i need junk removal service', '2025-07-11 18:13:25'),
+(98, 17, 'assistant', 'Let\'s get started on your junk removal request. Please provide me with the following details:\n\n1. **Customer Type** (Residential or Commercial):\n2. **Customer Name**:\n3. **Customer Email**:\n4. **Customer Phone**:\n5. **Location** (full address):\n6. **Preferred Removal Date and Time**:\n7. **Description of the junk items** (or upload any images/videos if you have them):\n8. **Any additional comments or specific requests regarding the removal**:\n\nOnce I have all this information, I\'ll be able to help you further!', '2025-07-11 18:13:25'),
+(99, 17, 'user', 'Hello', '2025-07-11 18:17:10'),
+(100, 17, 'assistant', 'Hello! How can I assist you today? If you\'re looking for a junk removal service, I\'m here to help you with that. Just provide me with the details I need.', '2025-07-11 18:17:10'),
+(101, 17, 'user', 'i need junk removal service', '2025-07-11 18:21:27'),
+(102, 17, 'assistant', 'I can help you with that! Please provide the following details for your junk removal request:\n\n1. **Customer Type** (Residential or Commercial):\n2. **Customer Name**:\n3. **Customer Email**:\n4. **Customer Phone**:\n5. **Location** (full address):\n6. **Preferred Removal Date and Time**:\n7. **Description of the junk items** (Please upload any images or videos if you have them):\n8. **Any additional comments or specific requests regarding the removal**:\n\nOnce I have all this information, I\'ll be able to create a service quote for you!', '2025-07-11 18:21:27'),
+(103, 18, 'user', '', '2025-07-11 19:02:17'),
+(104, 18, 'assistant', 'It looks like you\'re looking for junk removal. To help you with that, I need to gather some information:\n\n1. **Customer Type** (Residential or Commercial)?\n2. **Your Name**?\n3. **Your Email**?\n4. **Your Phone Number**?\n5. **Location** (full address)?\n6. **Preferred Removal Date and Time**?\n7. **A description of the junk items** (e.g., bikes, boxes)?\n8. **Any additional comments or specific requests regarding the removal**?\n\nOnce I have this information, I can assist you further!', '2025-07-11 19:02:17'),
+(105, 18, 'user', '', '2025-07-11 19:02:54'),
+(106, 18, 'assistant', 'I see you\'ve uploaded images for a junk removal request. To assist you further, I\'ll need some additional information:\n\n1. **Customer Type** (Residential or Commercial)?\n2. **Your Name**?\n3. **Your Email**?\n4. **Your Phone Number**?\n5. **Location** (full address)?\n6. **Preferred Removal Date and Time**?\n7. **Any specific comments or instructions regarding the removal**?\n\nOnce I have this information, I\'ll be able to proceed with your junk removal request!', '2025-07-11 19:02:54'),
+(107, 18, 'user', 'ocation is dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-11 19:03:57'),
+(108, 18, 'assistant', 'Thank you for the information! Before I can proceed with your junk removal request, I still need a couple of details:\n\n1. **Customer Type** (Residential or Commercial)?\n2. **Preferred Removal Date and Time**?\n3. **Any specific comments or instructions regarding the removal**?\n\nOnce I have this information, I\'ll be able to submit your request!', '2025-07-11 19:03:57'),
+(109, 18, 'user', '', '2025-07-11 19:05:39'),
+(110, 18, 'assistant', 'Thank you for the additional images. Based on the visuals, here’s a summary of the junk items observed:\n\n1. **Washer/Dryer**\n2. **Plastic Bags and Trash**\n3. **Wooden Ladder**\n4. **Storage Bins and Boxes**\n5. **Miscellaneous Household Items**\n\nTo complete your junk removal request, please confirm or provide the following:\n\n1. **Customer Type** (Residential or Commercial)?\n2. **Preferred Removal Date and Time**?\n3. **Any specific comments or instructions regarding the removal**?\n\nOnce I have this information, I can proceed with your request!', '2025-07-11 19:05:39'),
+(111, 18, 'user', 'residential', '2025-07-11 19:06:36'),
+(112, 18, 'assistant', 'Great! Thank you for confirming that you are a residential customer. \n\nNow, I still need the following details to complete your junk removal request:\n\n1. **Preferred Removal Date and Time**?\n2. **Any specific comments or instructions regarding the removal**?\n\nOnce I have this information, I\'ll be able to submit your request!', '2025-07-11 19:06:36'),
+(113, 18, 'user', '', '2025-07-11 19:09:19'),
+(114, 18, 'assistant', 'Thank you for the images! To finalize your junk removal request, I still need the following information:\n\n1. **Preferred Removal Date and Time**?\n2. **Any specific comments or instructions regarding the removal**?\n\nOnce I have this information, I can proceed with your request!', '2025-07-11 19:09:19'),
+(115, 18, 'user', '', '2025-07-11 19:17:21'),
+(116, 18, 'assistant', 'Thank you for providing the image! Here’s a summary of the junk items observed:\n\n- Various trash and debris\n- Cardboard boxes\n- Plastic items\n- Wooden materials\n- Miscellaneous household junk\n\nTo finalize your junk removal request, please provide the following:\n\n1. **Preferred Removal Date and Time**?\n2. **Any specific comments or instructions regarding the removal**?\n\nOnce I have this information, I\'ll be able to submit your request!', '2025-07-11 19:17:21'),
+(117, 18, 'user', '', '2025-07-11 19:20:23'),
+(118, 18, 'assistant', 'Thank you for the additional image! Based on what I\'ve observed, here is a summary of the junk items:\n\n### Junk Items Summary\n\n| Item Type               | Estimated Quantity | Estimated Dimensions | Estimated Weight |\n|-------------------------|-------------------|----------------------|------------------|\n| Boxes and Containers     | Multiple          | Various sizes        | Moderate         |\n| Clothing and Fabrics     | Assorted          | Various sizes        | Light to Moderate |\n| Small Appliances         | Several           | Standard dimensions  | Moderate         |\n| Miscellaneous Items      | Multiple          | Various sizes        | Moderate         |\n\nNow, here\'s what I still need to finalize your junk removal request:\n\n1. **Preferred Removal Date and Time**?\n2. **Any specific comments or instructions regarding the removal**?\n\nOnce I have this information, I\'ll be able to submit your request!', '2025-07-11 19:20:23'),
+(119, 18, 'user', '', '2025-07-11 19:22:49'),
+(120, 18, 'assistant', 'Thank you for the additional image! Based on the visual provided, here’s an updated summary of the junk items:\n\n### Junk Items Summary\n\n- **Boxes and Storage Bins**: Multiple, varying sizes\n- **Clothing and Fabrics**: Assorted\n- **Household Appliances**: Several\n- **Miscellaneous Household Items**: Various items like a fan, tools, etc.\n\nTo finalize your junk removal request, please provide the following:\n\n1. **Preferred Removal Date and Time**?\n2. **Any specific comments or instructions regarding the removal**?\n\nOnce I have this information, I can submit your request!', '2025-07-11 19:22:49'),
+(121, 18, 'user', '', '2025-07-11 19:24:58'),
+(122, 18, 'assistant', 'Based on the new image you\'ve provided, here’s an updated summary of the junk items:\n\n### Junk Items Summary\n\n| Item Type               | Estimated Quantity | Estimated Dimensions | Estimated Weight |\n|-------------------------|-------------------|----------------------|------------------|\n| Storage Bins            | Multiple          | Various sizes        | Moderate         |\n| Clothing and Fabrics    | Assorted          | Various sizes        | Light to Moderate |\n| Household Appliances     | Several           | Standard dimensions  | Moderate         |\n| Miscellaneous Items     | Many              | Various sizes        | Moderate         |\n\nNext, I still need the following details to finalize your junk removal request:\n\n1. **Preferred Removal Date and Time**?\n2. **Any specific comments or instructions regarding the removal**?\n\nOnce I have this information, I can proceed with your request!', '2025-07-11 19:24:58'),
+(123, 19, 'user', '', '2025-07-11 20:23:43'),
+(124, 19, 'assistant', 'I see you\'ve uploaded an image related to junk removal. To assist you effectively, could you please provide more details? Here are some questions to help gather the necessary information:\n\n1. **Customer Type:** Are you a Residential or Commercial customer?\n2. **Full Name:**\n3. **Email Address:**\n4. **Phone Number:**\n5. **Service Location:** (full address)\n6. **Preferred Service Date:**\n7. **Preferred Service Time:** (e.g., \'morning\', \'afternoon\', \'10:00 AM\')\n\nFor the junk items visible in the image, please provide:\n\n8. **Description of Junk Items:** (e.g., \"Old toilet, sink, cabinet\")\n9. **Estimated Quantity for each item:**\n10. **Estimated Dimensions:** (if known)\n11. **Estimated Weight:** (if known)\n12. **Any additional comments or specific requests regarding the removal:**\n\nOnce I have all these details, I can summarize everything and recommend a suitable dumpster size if needed!', '2025-07-11 20:23:43'),
+(125, 19, 'user', '', '2025-07-11 20:30:24'),
+(126, 19, 'assistant', 'Thank you for the image! Based on what\'s visible, it looks like there are a few items that may need removal, including:\n\n- An old toilet\n- A bathroom vanity/sink\n- Possibly some other smaller items\n\nTo proceed, I\'ll need some additional information:\n\n1. **Customer Type:** Are you a Residential or Commercial customer?\n2. **Full Name:**\n3. **Email Address:**\n4. **Phone Number:**\n5. **Service Location:** (full address)\n6. **Preferred Service Date:**\n7. **Preferred Service Time:** (e.g., \'morning\', \'afternoon\', \'10:00 AM\')\n\nFor the junk items visible in the image, please provide:\n\n8. **Estimated Quantity of Each Item:** (e.g., 1 toilet, 1 vanity)\n9. **Estimated Dimensions:** (if known)\n10. **Estimated Weight:** (if known)\n11. **Any additional comments or specific requests regarding the removal:**\n\nOnce I have this information, I can summarize everything and recommend a suitable dumpster size for your needs!', '2025-07-11 20:30:24'),
+(127, 19, 'user', 'i don', '2025-07-11 20:31:50'),
+(128, 19, 'assistant', 'To assist you with the junk removal, I still need some essential information. Could you please provide the following details?\n\n1. **Customer Type:** Are you a Residential or Commercial customer?\n2. **Full Name:**\n3. **Email Address:**\n4. **Phone Number:**\n5. **Service Location:** (full address)\n6. **Preferred Service Date:**\n7. **Preferred Service Time:** (e.g., \'morning\', \'afternoon\', \'10:00 AM\')\n\nFor the items visible in the image:\n\n8. **Estimated Quantity of Each Item:** (e.g., 1 toilet, 1 vanity)\n9. **Estimated Dimensions:** (if known)\n10. **Estimated Weight:** (if known)\n11. **Any additional comments or specific requests regarding the removal:**\n\nOnce I have this information, I can summarize your request and recommend a suitable dumpster size if necessary!', '2025-07-11 20:31:50'),
+(129, 19, 'user', '', '2025-07-11 20:36:43'),
+(130, 19, 'assistant', 'Thanks for the new image! It looks like there are multiple items that may need removal, including:\n\n- A mattress\n- A sofa\n- A grill\n- Some cabinets or other furniture pieces\n\nTo proceed, I\'ll need to gather some essential information:\n\n1. **Customer Type:** Are you a Residential or Commercial customer?\n2. **Full Name:**\n3. **Email Address:**\n4. **Phone Number:**\n5. **Service Location:** (full address)\n6. **Preferred Service Date:**\n7. **Preferred Service Time:** (e.g., \'morning\', \'afternoon\', \'10:00 AM\')\n\nFor the junk items visible in the image, please provide:\n\n8. **Estimated Quantity of Each Item:** \n   - (e.g., 1 mattress, 1 sofa, 1 grill)\n9. **Estimated Dimensions:** (if known)\n10. **Estimated Weight:** (if known)\n11. **Any additional comments or specific requests regarding the removal:**\n\nOnce I have all this information, I can summarize everything and recommend a suitable dumpster size!', '2025-07-11 20:36:43'),
+(131, 19, 'user', '', '2025-07-11 20:46:29'),
+(132, 19, 'assistant', 'I understand you’ve uploaded another image showing a cluttered area with various items. To help with your junk removal request, I\'ll need some information from you.\n\nPlease provide the following details:\n\n1. **Customer Type:** Are you a Residential or Commercial customer?\n2. **Full Name:**\n3. **Email Address:**\n4. **Phone Number:**\n5. **Service Location:** (full address)\n6. **Preferred Service Date:**\n7. **Preferred Service Time:** (e.g., \'morning\', \'afternoon\', \'10:00 AM\')\n\nFor the items visible in the image, please provide:\n\n8. **Estimated Quantity of Each Item:** (e.g., boxes, clothing, furniture)\n9. **Estimated Dimensions:** (if known)\n10. **Estimated Weight:** (if known)\n11. **Any additional comments or specific requests regarding the removal:**\n\nOnce I have all this information, I can summarize your request and recommend a suitable dumpster size if necessary!', '2025-07-11 20:46:29'),
+(133, 19, 'user', '', '2025-07-11 20:51:10'),
+(134, 19, 'assistant', 'It looks like the image shows a room filled with various items, including boxes, bags, and general clutter that may need to be removed. To assist you further with your junk removal request, I still need some essential information from you:\n\n1. **Customer Type:** Are you a Residential or Commercial customer?\n2. **Full Name:**\n3. **Email Address:**\n4. **Phone Number:**\n5. **Service Location:** (full address)\n6. **Preferred Service Date:**\n7. **Preferred Service Time:** (e.g., \'morning\', \'afternoon\', \'10:00 AM\')\n\nFor the items visible in the image, please provide:\n\n8. **Estimated Quantity of Each Item:** (e.g., boxes, bags of clothes, etc.)\n9. **Estimated Dimensions:** (if known)\n10. **Estimated Weight:** (if known)\n11. **Any additional comments or specific requests regarding the removal:**\n\nLet me know, and I\'ll summarize everything and recommend a suitable dumpster size if necessary!', '2025-07-11 20:51:10'),
+(135, 19, 'user', '', '2025-07-11 20:59:52'),
+(136, 19, 'assistant', 'Thank you for the image! It looks like the garage has a mix of items, including kids\' toys (like bikes and electric rides), storage bins, and some general clutter.\n\nTo assist you with the junk removal, please provide the following details:\n\n1. **Customer Type:** Are you a Residential or Commercial customer?\n2. **Full Name:**\n3. **Email Address:**\n4. **Phone Number:**\n5. **Service Location:** (full address)\n6. **Preferred Service Date:**\n7. **Preferred Service Time:** (e.g., \'morning\', \'afternoon\', \'10:00 AM\')\n\nFor the items visible in the image, please provide:\n\n8. **Estimated Quantity of Each Item:** (e.g., bikes, storage bins)\n9. **Estimated Dimensions:** (if known)\n10. **Estimated Weight:** (if known)\n11. **Any additional comments or specific requests regarding the removal:**\n\nOnce I have all this information, I can summarize your request and suggest a suitable dumpster size if needed!', '2025-07-11 20:59:52'),
+(137, 19, 'user', '', '2025-07-11 21:06:33'),
+(138, 19, 'assistant', 'I\'m sorry, please try again.', '2025-07-11 21:06:33'),
+(139, 19, 'user', '', '2025-07-11 21:06:57'),
+(140, 19, 'assistant', 'I\'m sorry, please try again.', '2025-07-11 21:06:57'),
+(141, 19, 'user', '', '2025-07-11 21:08:32'),
+(142, 19, 'assistant', 'Thank you for sharing the image! It looks like the garage has a variety of items, including children’s toys (like electric rides and bikes), storage bins, and other miscellaneous clutter.\n\nTo assist you with the junk removal, could you please provide the following details?\n\n1. **Customer Type:** Are you a Residential or Commercial customer?\n2. **Full Name:**\n3. **Email Address:**\n4. **Phone Number:**\n5. **Service Location:** (full address)\n6. **Preferred Service Date:**\n7. **Preferred Service Time:** (e.g., \'morning\', \'afternoon\', \'10:00 AM\')\n\nFor the items visible in the image, please provide:\n\n8. **Estimated Quantity of Each Item:** (e.g., 2 bikes, 3 storage bins)\n9. **Estimated Dimensions:** (if known)\n10. **Estimated Weight:** (if known)\n11. **Any additional comments or specific requests regarding the removal:**\n\nOnce I have this information, I can summarize your request and recommend a suitable dumpster size if needed!', '2025-07-11 21:08:32'),
+(143, 19, 'user', '', '2025-07-11 21:13:33'),
+(144, 19, 'assistant', 'Based on the image of the garage, here are the items I can identify:\n\n🟥 Item: Electric ride-on toy (pink)\n📏 Size: Approx. 3x2x2 ft\n⚖️ Weight: Approx. 30 lbs\n\n🟥 Item: Electric ride-on toy (black and purple)\n📏 Size: Approx. 3x2x2 ft\n⚖️ Weight: Approx. 30 lbs\n\n🟥 Item: Electric ride-on bike (orange)\n📏 Size: Approx. 3x1.5x1.5 ft\n⚖️ Weight: Approx. 25 lbs\n\n🟥 Item: Storage bins (assorted)\n📏 Size: Variable (Approx. 2x1.5x1.5 ft each)\n⚖️ Weight: Approx. 10 lbs each\n\n🟥 Item: Shelving unit\n📏 Size: Approx. 4x2x1.5 ft\n⚖️ Weight: Approx. 50 lbs\n\n🟥 Item: Miscellaneous items (boxes/bags)\n📏 Size: Variable\n⚖️ Weight: Approx. 20 lbs total\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 21:13:33'),
+(145, 19, 'user', 'no that will be good', '2025-07-11 21:14:13'),
+(146, 19, 'assistant', 'Great! Now, let\'s gather your information to complete the junk removal process.\n\nPlease provide the following details:\n\n1. **Customer Type:** Are you a Residential or Commercial customer?\n2. **Full Name:**\n3. **Email Address:**\n4. **Phone Number:**\n5. **Service Location:** (full address)\n6. **Preferred Service Date:**\n7. **Preferred Service Time:** (e.g., \'morning\', \'afternoon\', \'10:00 AM\')\n\nOnce I have all this information, I will summarize your request and proceed!', '2025-07-11 21:14:13'),
+(147, 19, 'user', 'am residential location is dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-11 21:15:20'),
+(148, 19, 'assistant', 'Thanks for providing your information! Here’s a summary of your junk removal request:\n\n### Junk Items:\n- Electric ride-on toy (pink): 1 unit\n- Electric ride-on toy (black and purple): 1 unit\n- Electric ride-on bike (orange): 1 unit\n- Storage bins (assorted): several units\n- Shelving unit: 1 unit\n- Miscellaneous items: assorted boxes/bags\n\n### Customer Information:\n- **Customer Type:** Residential\n- **Full Name:** Jon Vital\n- **Email Address:** jjony@test.com\n- **Phone Number:** 121-321-312\n- **Service Location:** Dallas, Texas 7110\n- **Preferred Service Date:** (please specify)\n- **Preferred Service Time:** (please specify)\n\nPlease provide your preferred service date and time so I can finalize your request!', '2025-07-11 21:15:20'),
+(149, 19, 'user', 'tomorrow afternoon will work', '2025-07-11 21:15:42'),
+(150, 19, 'assistant', 'Thank you! Your quote request (#Q16) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-11 21:15:42'),
+(151, 20, 'user', '', '2025-07-11 23:11:14'),
+(152, 20, 'assistant', '🟥 Item: Kids\' Electric Ride-On Toy (Black)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Electric Ride-On Toy (Purple)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Bicycle (Pink)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Kids\' Bicycle (Orange)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Baby Stroller\n📏 Size: approx. 3x2x1.5 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Vacuum Cleaner\n📏 Size: approx. 1.5x1x3 ft\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Storage Bins (Plastic)\n📏 Size: approx. 2x2x1 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Folding Table\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 30 lbs\n\n🟥 Item: Green Trash Bin\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:11:14'),
+(153, 20, 'user', 'no these are perfect', '2025-07-11 23:11:35'),
+(154, 20, 'assistant', 'Please provide the following information to proceed with the junk removal request:\n\n- Full Name\n- Email Address\n- Phone Number\n- Service Location (full address)\n- Preferred Date for service (YYYY-MM-DD)\n- Preferred Time for service (e.g., \"morning,\" \"afternoon,\" \"10:00 AM\")', '2025-07-11 23:11:35'),
+(155, 20, 'user', 'dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-11 23:12:03'),
+(156, 20, 'assistant', 'I noticed that a phone number was provided, but it seems to be misformatted. Please confirm or provide the complete contact number to proceed. Additionally, please specify the preferred date and time for the junk removal service. \n\nThank you!', '2025-07-11 23:12:03'),
+(157, 20, 'user', '232131312  tomorrow afternoon will work', '2025-07-11 23:12:48'),
+(158, 20, 'assistant', 'Here’s a summary of your junk removal request:\n\n- **Customer Name:** Jon Vital\n- **Email Address:** jjony@test.com\n- **Phone Number:** 232131312\n- **Service Location:** Dallas, Texas\n- **Preferred Date:** Tomorrow (YYYY-MM-DD format)\n- **Preferred Time:** Afternoon\n- **Junk Items:**\n  - Kids\' Electric Ride-On Toy (Black)\n  - Kids\' Electric Ride-On Toy (Purple)\n  - Kids\' Bicycle (Pink)\n  - Kids\' Bicycle (Orange)\n  - Baby Stroller\n  - Vacuum Cleaner\n  - Storage Bins (Plastic)\n  - Folding Table\n  - Green Trash Bin\n\nIs everything correct? If so, I will proceed with your request!', '2025-07-11 23:12:48'),
+(159, 20, 'user', 'yes', '2025-07-11 23:13:09'),
+(160, 20, 'assistant', '🟥 Item: Kids\' Electric Ride-On Toy (Black)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Electric Ride-On Toy (Purple)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Bicycle (Pink)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Kids\' Bicycle (Orange)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Baby Stroller\n📏 Size: approx. 3x2x1.5 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Vacuum Cleaner\n📏 Size: approx. 1.5x1x3 ft\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Storage Bins (Plastic)\n📏 Size: approx. 2x2x1 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Folding Table\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 30 lbs\n\n🟥 Item: Green Trash Bin\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:13:09'),
+(161, 20, 'user', '', '2025-07-11 23:16:58'),
+(162, 20, 'assistant', '🟥 Item: Wooden Chair\n📏 Size: approx. 3x2x3 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Plastic Storage Bin (various)\n📏 Size: approx. 2x2x1.5 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Red Fan\n📏 Size: approx. 2x1x2 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Red Torch/Flashlight\n📏 Size: approx. 1x1x6 in\n⚖️ Weight: approx. 1 lb\n\n🟥 Item: Boxes (various sizes)\n📏 Size: approx. 1.5x1.5x1.5 ft (multiple boxes)\n⚖️ Weight: approx. 3-5 lbs each\n\n🟥 Item: Folded Blankets and Clothing\n📏 Size: approx. 2x2x1 ft (piled)\n⚖️ Weight: approx. 10-15 lbs\n\n🟥 Item: Old Stereo System\n📏 Size: approx. 2x1x2 ft\n⚖️ Weight: approx. 20 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:16:58'),
+(163, 20, 'user', 'yes all looks good', '2025-07-11 23:17:19'),
+(164, 20, 'assistant', '🟥 Item: Old Stereo System\n📏 Size: approx. 2x1x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Plastic Storage Bins (various)\n📏 Size: approx. 2x2x1.5 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Red Fan\n📏 Size: approx. 2x1x2 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Red Torch/Flashlight\n📏 Size: approx. 1x1x6 in\n⚖️ Weight: approx. 1 lb\n\n🟥 Item: Boxes (various sizes)\n📏 Size: approx. 1.5x1.5x1.5 ft (multiple boxes)\n⚖️ Weight: approx. 3-5 lbs each\n\n🟥 Item: Folded Blankets and Clothing\n📏 Size: approx. 2x2x1 ft (piled)\n⚖️ Weight: approx. 10-15 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:17:19'),
+(165, 20, 'user', 'no', '2025-07-11 23:17:41'),
+(166, 20, 'assistant', '🟥 Item: Old Stereo System\n📏 Size: approx. 2x1x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Plastic Storage Bins (various)\n📏 Size: approx. 2x2x1.5 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Red Fan\n📏 Size: approx. 2x1x2 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Red Torch/Flashlight\n📏 Size: approx. 1x1x6 in\n⚖️ Weight: approx. 1 lb\n\n🟥 Item: Boxes (various sizes)\n📏 Size: approx. 1.5x1.5x1.5 ft (multiple boxes)\n⚖️ Weight: approx. 3-5 lbs each\n\n🟥 Item: Folded Blankets and Clothing\n📏 Size: approx. 2x2x1 ft (piled)\n⚖️ Weight: approx. 10-15 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:17:41'),
+(167, 20, 'user', '', '2025-07-11 23:20:25'),
+(168, 20, 'assistant', '🟥 Item: Kids\' Electric Ride-On Toy (Black)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Electric Ride-On Toy (Purple)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Bicycle (Pink)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Kids\' Bicycle (Orange)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Baby Stroller\n📏 Size: approx. 3x2x1.5 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Vacuum Cleaner\n📏 Size: approx. 1.5x1x3 ft\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Storage Bins (Plastic)\n📏 Size: approx. 2x2x1 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Folding Table\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 30 lbs\n\n🟥 Item: Green Trash Bin\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:20:25'),
+(169, 20, 'user', 'it looks good', '2025-07-11 23:20:45'),
+(170, 20, 'assistant', '🟥 Item: Kids\' Electric Ride-On Toy (Black)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Electric Ride-On Toy (Purple)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Bicycle (Pink)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Kids\' Bicycle (Orange)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Baby Stroller\n📏 Size: approx. 3x2x1.5 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Vacuum Cleaner\n📏 Size: approx. 1.5x1x3 ft\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Storage Bins (Plastic)\n📏 Size: approx. 2x2x1 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Folding Table\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 30 lbs\n\n🟥 Item: Green Trash Bin\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\nNow that the list is confirmed, let’s proceed with your junk removal request.\n\n### Summary:\n- **Customer Name:** Jon Vital\n- **Email Address:** jjony@test.com\n- **Phone Number:** 232131312\n- **Service Location:** Dallas, Texas\n- **Preferred Date:** Tomorrow\n- **Preferred Time:** Afternoon\n- **Junk Items:** (as listed above)\n\nIs everything correct? If so, I will submit your request!', '2025-07-11 23:20:45'),
+(171, 20, 'user', '', '2025-07-11 23:32:11'),
+(172, 20, 'assistant', '🟥 Item: Kids\' Electric Ride-On Toy (Black)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Electric Ride-On Toy (Purple)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Bicycle (Pink)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Kids\' Bicycle (Orange)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Baby Stroller\n📏 Size: approx. 3x2x1.5 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Vacuum Cleaner\n📏 Size: approx. 1.5x1x3 ft\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Storage Bins (Plastic)\n📏 Size: approx. 2x2x1 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Folding Table\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 30 lbs\n\n🟥 Item: Green Trash Bin\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:32:11'),
+(173, 20, 'user', 'yes all good', '2025-07-11 23:32:28');
+INSERT INTO `chat_messages` (`id`, `conversation_id`, `role`, `content`, `created_at`) VALUES
+(174, 20, 'assistant', '🟥 Item: Kids\' Electric Ride-On Toy (Black)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Electric Ride-On Toy (Purple)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Bicycle (Pink)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Kids\' Bicycle (Orange)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Baby Stroller\n📏 Size: approx. 3x2x1.5 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Vacuum Cleaner\n📏 Size: approx. 1.5x1x3 ft\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Storage Bins (Plastic)\n📏 Size: approx. 2x2x1 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Folding Table\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 30 lbs\n\n🟥 Item: Green Trash Bin\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:32:28'),
+(175, 20, 'user', '', '2025-07-11 23:34:29'),
+(176, 20, 'assistant', '🟥 Item: Kids\' Electric Ride-On Toy (Black)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Electric Ride-On Toy (Purple)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Bicycle (Pink)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Kids\' Bicycle (Orange)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Baby Stroller\n📏 Size: approx. 3x2x1.5 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Vacuum Cleaner\n📏 Size: approx. 1.5x1x3 ft\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Storage Bins (Plastic)\n📏 Size: approx. 2x2x1 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Folding Table\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 30 lbs\n\n🟥 Item: Green Trash Bin\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:34:29'),
+(177, 20, 'user', 'yes all looks good', '2025-07-11 23:34:48'),
+(178, 20, 'assistant', '🟥 Item: Kids\' Electric Ride-On Toy (Black)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Electric Ride-On Toy (Purple)\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 50 lbs\n\n🟥 Item: Kids\' Bicycle (Pink)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Kids\' Bicycle (Orange)\n📏 Size: approx. 4x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Baby Stroller\n📏 Size: approx. 3x2x1.5 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Vacuum Cleaner\n📏 Size: approx. 1.5x1x3 ft\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Storage Bins (Plastic)\n📏 Size: approx. 2x2x1 ft (multiple bins)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Folding Table\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 30 lbs\n\n🟥 Item: Green Trash Bin\n📏 Size: approx. 3x2x2 ft\n⚖️ Weight: approx. 20 lbs\n\nGreat! Now, please provide the following information to proceed with the junk removal request:\n\n- **Service Location (full address)**\n- **Preferred Time for service (e.g., \"morning,\" \"afternoon,\" \"10:00 AM\")**', '2025-07-11 23:34:48'),
+(179, 20, 'user', 'dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-11 23:35:22'),
+(180, 20, 'assistant', 'Thank you for the information! However, please provide the preferred time for service (e.g., \"morning,\" \"afternoon,\" \"10:00 AM\") so I can finalize your junk removal request. \n\nHere’s your current information:\n\n- **Customer Name:** Jon Vital\n- **Email Address:** jjony@test.com\n- **Phone Number:** 121321312\n- **Service Location:** Dallas, Texas\n- **Junk Items:**\n  - Kids\' Electric Ride-On Toy (Black)\n  - Kids\' Electric Ride-On Toy (Purple)\n  - Kids\' Bicycle (Pink)\n  - Kids\' Bicycle (Orange)\n  - Baby Stroller\n  - Vacuum Cleaner\n  - Storage Bins (Plastic)\n  - Folding Table\n  - Green Trash Bin\n\nJust need the preferred service time!', '2025-07-11 23:35:22'),
+(181, 20, 'user', '', '2025-07-11 23:50:38'),
+(182, 20, 'assistant', '🟥 Item: PVC Pipes and Hoses\n📏 Size: approx. 3x1 ft (various pieces)\n⚖️ Weight: approx. 10-20 lbs\n\n🟥 Item: Pile of Debris (Wood Pallets)\n📏 Size: approx. 4x3x2 ft\n⚖️ Weight: approx. 50-80 lbs\n\n🟥 Item: Tarps\n📏 Size: approx. 6x4 ft (various pieces)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Plastic Chair Parts\n📏 Size: approx. 2x2 ft\n⚖️ Weight: approx. 5-10 lbs\n\n🟥 Item: Cardboard Boxes\n📏 Size: approx. 2x2x2 ft (multiple boxes)\n⚖️ Weight: approx. 3-5 lbs each\n\n🟥 Item: Miscellaneous Household Junk (including old tools and containers)\n📏 Size: varies (piled together)\n⚖️ Weight: approx. 30-50 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:50:38'),
+(183, 20, 'user', 'yes all looks good', '2025-07-11 23:50:52'),
+(184, 20, 'assistant', '🟥 Item: PVC Pipes and Hoses\n📏 Size: approx. 3x1 ft (various pieces)\n⚖️ Weight: approx. 10-20 lbs\n\n🟥 Item: Pile of Debris (Wood Pallets)\n📏 Size: approx. 4x3x2 ft\n⚖️ Weight: approx. 50-80 lbs\n\n🟥 Item: Tarps\n📏 Size: approx. 6x4 ft (various pieces)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Plastic Chair Parts\n📏 Size: approx. 2x2 ft\n⚖️ Weight: approx. 5-10 lbs\n\n🟥 Item: Cardboard Boxes\n📏 Size: approx. 2x2x2 ft (multiple boxes)\n⚖️ Weight: approx. 3-5 lbs each\n\n🟥 Item: Miscellaneous Household Junk (including old tools and containers)\n📏 Size: varies (piled together)\n⚖️ Weight: approx. 30-50 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:50:52'),
+(185, 20, 'user', 'all looks good', '2025-07-11 23:51:16'),
+(186, 20, 'assistant', '🟥 Item: PVC Pipes and Hoses\n📏 Size: approx. 3x1 ft (various pieces)\n⚖️ Weight: approx. 10-20 lbs\n\n🟥 Item: Pile of Debris (Wood Pallets)\n📏 Size: approx. 4x3x2 ft\n⚖️ Weight: approx. 50-80 lbs\n\n🟥 Item: Tarps\n📏 Size: approx. 6x4 ft (various pieces)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Plastic Chair Parts\n📏 Size: approx. 2x2 ft\n⚖️ Weight: approx. 5-10 lbs\n\n🟥 Item: Cardboard Boxes\n📏 Size: approx. 2x2x2 ft (multiple boxes)\n⚖️ Weight: approx. 3-5 lbs each\n\n🟥 Item: Miscellaneous Household Junk (including old tools and containers)\n📏 Size: varies (piled together)\n⚖️ Weight: approx. 30-50 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:51:16'),
+(187, 20, 'user', '', '2025-07-11 23:52:47'),
+(188, 20, 'assistant', '🟥 Item: Refrigerator\n📏 Size: approx. 6x2.5x2.5 ft\n⚖️ Weight: approx. 150 lbs\n\n🟥 Item: Plastic Storage Bins (Blue)\n📏 Size: approx. 3x2x1.5 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Various Tools & Toolboxes\n📏 Size: varies (multiple items, stacked)\n⚖️ Weight: approx. 30-50 lbs\n\n🟥 Item: Shelving Units \n📏 Size: approx. 4x2x1 ft\n⚖️ Weight: approx. 40 lbs\n\n🟥 Item: Paint Cans\n📏 Size: approx. 1x1x1 ft (various cans)\n⚖️ Weight: approx. 5-10 lbs each\n\n🟥 Item: Yard/Garden Equipment (e.g., chainsaw)\n📏 Size: approx. 2x1x1 ft \n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Plastic Bags (filled with items)\n📏 Size: varies (multiple bags)\n⚖️ Weight: approx. 10-15 lbs each\n\n🟥 Item: Pile of Debris (Wood and Cardboard)\n📏 Size: varies\n⚖️ Weight: approx. 40-60 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:52:47'),
+(189, 20, 'user', 'yes all looks good', '2025-07-11 23:53:09'),
+(190, 20, 'assistant', 'Please review the details below and submit your junk removal request for a quote.', '2025-07-11 23:53:09'),
+(191, 21, 'user', '', '2025-07-11 23:54:08'),
+(192, 21, 'assistant', '🟥 Item: Couch\n📏 Size: Approx. 6x3x3 ft\n⚖️ Weight: Approx. 100 lbs\n\n🟥 Item: Wooden chair\n📏 Size: Approx. 3x2x4 ft\n⚖️ Weight: Approx. 20 lbs\n\n🟥 Item: Plastic storage bins (assumed multiple)\n📏 Size: Approx. 2x1.5x1.5 ft each\n⚖️ Weight: Approx. 5 lbs each\n\n🟥 Item: Cardboard box (medium)\n📏 Size: Approx. 2x1.5x1.5 ft\n⚖️ Weight: Approx. 5 lbs\n\n🟥 Item: Cooler\n📏 Size: Approx. 2x1x1 ft\n⚖️ Weight: Approx. 7 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:54:08'),
+(193, 21, 'user', 'yes all looks good', '2025-07-11 23:54:23'),
+(194, 21, 'assistant', 'Great! Now, please provide the following information to proceed with the junk removal request:\n\n- Full Name\n- Email Address\n- Phone Number\n- Service Location (full address)\n- Preferred Date for service (YYYY-MM-DD)\n- Preferred Time for service (e.g., \'morning,\' \'afternoon,\' \'10:00 AM\')', '2025-07-11 23:54:23'),
+(195, 21, 'user', 'location is dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-11 23:54:48'),
+(196, 21, 'assistant', 'It seems that you\'ve provided only part of the required details. Please provide the following missing information to complete your junk removal request:\n\n- Full Name\n- Phone Number\n- Preferred Date for service (YYYY-MM-DD)\n- Preferred Time for service (e.g., \'morning,\' \'afternoon,\' \'10:00 AM\') \n\nOnce I have all this information, we can proceed!', '2025-07-11 23:54:48'),
+(197, 21, 'user', 'tomorrow morning 10am', '2025-07-11 23:55:06'),
+(198, 21, 'assistant', '🟥 Item: Couch\n📏 Size: Approx. 6x3x3 ft\n⚖️ Weight: Approx. 100 lbs\n\n🟥 Item: Wooden chair\n📏 Size: Approx. 3x2x4 ft\n⚖️ Weight: Approx. 20 lbs\n\n🟥 Item: Plastic storage bins (assumed multiple)\n📏 Size: Approx. 2x1.5x1.5 ft each\n⚖️ Weight: Approx. 5 lbs each\n\n🟥 Item: Cardboard box (medium)\n📏 Size: Approx. 2x1.5x1.5 ft\n⚖️ Weight: Approx. 5 lbs\n\n🟥 Item: Cooler\n📏 Size: Approx. 2x1x1 ft\n⚖️ Weight: Approx. 7 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-11 23:55:06'),
+(199, 21, 'user', '[{\"type\":\"image_url\",\"image_url\":{\"url\":\"https:\\/\\/catproject.prelaunchdesigns.com\\/uploads\\/junk_removal_media\\/media_6871a569f029d.jpeg\"}}]', '2025-07-11 23:59:40'),
+(200, 21, 'assistant', 'Please confirm the following details for your junk removal request:\n\n- **Full Name**: Jon Vital\n- **Email Address**: jjony@test.com\n- **Phone Number**: 121321312\n- **Service Location**: Dallas, Texas\n- **Preferred Date**: Tomorrow (YYYY-MM-DD)\n- **Preferred Time**: 10:00 AM\n- **Items to Remove**:\n  - Couch\n  - Wooden chair\n  - Plastic storage bins\n  - Cardboard box (medium)\n  - Cooler\n\nIs everything correct? If so, I\'ll proceed with the request!', '2025-07-11 23:59:40'),
+(201, 21, 'user', '[{\"type\":\"text\",\"text\":\"yes all is correct\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https:\\/\\/catproject.prelaunchdesigns.com\\/uploads\\/junk_removal_media\\/media_6871a588317ee.jpeg\"}}]', '2025-07-12 00:00:11'),
+(202, 21, 'assistant', 'Please review the details below and submit your junk removal request for a quote.', '2025-07-12 00:00:11'),
+(203, 22, 'user', '[{\"type\":\"image_url\",\"image_url\":{\"url\":\"https:\\/\\/catproject.prelaunchdesigns.com\\/uploads\\/junk_removal_media\\/media_6871a67fc565a.jpeg\"}}]', '2025-07-12 00:04:17'),
+(204, 22, 'assistant', 'I can\'t identify the contents of the image or make comments about it. However, if you need assistance with junk removal or equipment rental, please let me know the details!', '2025-07-12 00:04:17'),
+(205, 22, 'user', '[{\"type\":\"image_url\",\"image_url\":{\"url\":\"https:\\/\\/catproject.prelaunchdesigns.com\\/uploads\\/junk_removal_media\\/media_6871a693e15ba.webp\"}}]', '2025-07-12 00:04:37'),
+(206, 22, 'assistant', 'I can\'t recognize or comment on the image. If you need help with junk removal or any equipment rental, please provide the details, and I\'ll be glad to assist!', '2025-07-12 00:04:37'),
+(207, 22, 'user', '[{\"type\":\"image_url\",\"image_url\":{\"url\":\"https:\\/\\/catproject.prelaunchdesigns.com\\/uploads\\/junk_removal_media\\/media_6871a6a97d9cf.jpg\"}}]', '2025-07-12 00:05:00'),
+(208, 22, 'assistant', 'I can\'t provide insights about the image. If you\'re looking for junk removal or equipment rental services, please share the details, and I\'ll assist you!', '2025-07-12 00:05:00'),
+(209, 22, 'user', '', '2025-07-12 00:10:02'),
+(210, 22, 'assistant', '🟥 Item: Pink Bicycle  \n📏 Size: Approx. 3x1.5x1 ft  \n⚖️ Weight: Approx. 15 lbs  \n\n🟥 Item: Black Electric Ride-On Toy (2)  \n📏 Size: Approx. 3x2x2 ft  \n⚖️ Weight: Approx. 50 lbs each  \n\n🟥 Item: Child\'s Car Seat  \n📏 Size: Approx. 2x1x2 ft  \n⚖️ Weight: Approx. 10 lbs  \n\n🟥 Item: Green Plastic Bin  \n📏 Size: Approx. 2x1.5x1 ft  \n⚖️ Weight: Approx. 5 lbs  \n\n🟥 Item: Various Storage Boxes  \n📏 Size: Various sizes (Average: 2x1x1 ft)  \n⚖️ Weight: Approx. 10 lbs each  \n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:10:02'),
+(211, 22, 'user', 'add 2 cabins with 3lbs', '2025-07-12 00:10:38'),
+(212, 22, 'assistant', '🟥 Item: Pink Bicycle  \n📏 Size: Approx. 3x1.5x1 ft  \n⚖️ Weight: Approx. 15 lbs  \n\n🟥 Item: Black Electric Ride-On Toy (2)  \n📏 Size: Approx. 3x2x2 ft  \n⚖️ Weight: Approx. 50 lbs each  \n\n🟥 Item: Child\'s Car Seat  \n📏 Size: Approx. 2x1x2 ft  \n⚖️ Weight: Approx. 10 lbs  \n\n🟥 Item: Green Plastic Bin  \n📏 Size: Approx. 2x1.5x1 ft  \n⚖️ Weight: Approx. 5 lbs  \n\n🟥 Item: Various Storage Boxes  \n📏 Size: Various sizes (Average: 2x1x1 ft)  \n⚖️ Weight: Approx. 10 lbs each  \n\n🟥 Item: Cabin  \n📏 Size: Approx. 1.5x1.5x2 ft  \n⚖️ Weight: Approx. 3 lbs  \n\n🟥 Item: Cabin  \n📏 Size: Approx. 1.5x1.5x2 ft  \n⚖️ Weight: Approx. 3 lbs  \n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:10:38'),
+(213, 22, 'user', 'all good', '2025-07-12 00:11:14'),
+(214, 22, 'assistant', '🟥 Item: Pink Bicycle  \n📏 Size: Approx. 3x1.5x1 ft  \n⚖️ Weight: Approx. 15 lbs  \n\n🟥 Item: Black Electric Ride-On Toy (2)  \n📏 Size: Approx. 3x2x2 ft  \n⚖️ Weight: Approx. 50 lbs each  \n\n🟥 Item: Child\'s Car Seat  \n📏 Size: Approx. 2x1x2 ft  \n⚖️ Weight: Approx. 10 lbs  \n\n🟥 Item: Green Plastic Bin  \n📏 Size: Approx. 2x1.5x1 ft  \n⚖️ Weight: Approx. 5 lbs  \n\n🟥 Item: Various Storage Boxes  \n📏 Size: Various sizes (Average: 2x1x1 ft)  \n⚖️ Weight: Approx. 10 lbs each  \n\n🟥 Item: Cabin  \n📏 Size: Approx. 1.5x1.5x2 ft  \n⚖️ Weight: Approx. 3 lbs  \n\n🟥 Item: Cabin  \n📏 Size: Approx. 1.5x1.5x2 ft  \n⚖️ Weight: Approx. 3 lbs  \n\nNow, could you please provide the following information for the junk removal service?\n\n- Full Name\n- Email Address\n- Phone Number\n- Service Location (full address)\n- Preferred Date\n- Preferred Time', '2025-07-12 00:11:14'),
+(215, 22, 'user', 'location is dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-12 00:11:36'),
+(216, 22, 'assistant', 'Here’s a summary of your junk removal request:\n\n### Junk Items:\n1. **Pink Bicycle**  \n   - Size: Approx. 3x1.5x1 ft  \n   - Weight: Approx. 15 lbs  \n   \n2. **Black Electric Ride-On Toy (2)**  \n   - Size: Approx. 3x2x2 ft  \n   - Weight: Approx. 50 lbs each  \n\n3. **Child\'s Car Seat**  \n   - Size: Approx. 2x1x2 ft  \n   - Weight: Approx. 10 lbs  \n\n4. **Green Plastic Bin**  \n   - Size: Approx. 2x1.5x1 ft  \n   - Weight: Approx. 5 lbs  \n\n5. **Various Storage Boxes**  \n   - Size: Various sizes (Average: 2x1x1 ft)  \n   - Weight: Approx. 10 lbs each  \n\n6. **Cabin (2)**  \n   - Size: Approx. 1.5x1.5x2 ft  \n   - Weight: Approx. 3 lbs each  \n\n### Customer Information:\n- **Full Name:** Jon Vital  \n- **Email Address:** jjony@test.com  \n- **Phone Number:** 121321312  \n- **Service Location:** Dallas, Texas, 7110  \n\n### Next Steps:\n- **Preferred Date:** (Please provide your preferred date)  \n- **Preferred Time:** (Please provide your preferred time)  \n\nOnce I have the preferred date and time, I can proceed with your request!', '2025-07-12 00:11:36'),
+(217, 22, 'user', 'tomorrow 10am', '2025-07-12 00:11:59'),
+(218, 22, 'assistant', 'Thank you! Your quote request (#Q19) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-12 00:11:59'),
+(219, 23, 'user', '', '2025-07-12 00:21:52'),
+(220, 23, 'assistant', 'It looks like the image shows a collection of items on a truck or trailer. There are various pieces of furniture and boxes, likely getting ready for junk removal or disposal. If you need assistance with junk removal or any similar service, let me know!', '2025-07-12 00:21:52'),
+(221, 23, 'user', 'that is correct', '2025-07-12 00:22:10'),
+(222, 23, 'assistant', 'If you\'re looking for junk removal services for the items shown, I can help you get started with a quote request. Just let me know the details like your location, contact information, and preferred service date and time!', '2025-07-12 00:22:10'),
+(223, 23, 'user', 'i need 2 15 yard dumpster and 1 20 yard dumpster and 2 temporary toilets, for 14 days, tomorrow, can deliver in morning, not a live load, not urgent, location is dallas texas 7110,jon vital 121321312 jjony@test.com', '2025-07-12 00:22:34'),
+(224, 23, 'assistant', 'Thank you! Your quote request (#Q20) has been successfully submitted. Our team will review the details and send you the best price within the hour.', '2025-07-12 00:22:34'),
+(225, 24, 'user', '', '2025-07-12 00:24:22'),
+(226, 24, 'assistant', '🟥 Item: Sofa\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 80 lbs\n\n🟥 Item: Wooden chair\n📏 Size: approx. 3x2x4 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Plastic storage containers (x2)\n📏 Size: approx. 2x1.5x1.5 ft each\n⚖️ Weight: approx. 10 lbs each\n\n🟥 Item: Cardboard box (medium size)\n📏 Size: approx. 1.5x2x1.5 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Cool container (ice cooler)\n📏 Size: approx. 2x1x1 ft\n⚖️ Weight: approx. 5 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:24:22'),
+(227, 24, 'user', 'yes that is correct', '2025-07-12 00:24:37'),
+(228, 24, 'assistant', '🟥 Item: Sofa\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 80 lbs\n\n🟥 Item: Wooden chair\n📏 Size: approx. 3x2x4 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Plastic storage containers (x2)\n📏 Size: approx. 2x1.5x1.5 ft each\n⚖️ Weight: approx. 10 lbs each\n\n🟥 Item: Cardboard box (medium size)\n📏 Size: approx. 1.5x2x1.5 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Cool container (ice cooler)\n📏 Size: approx. 2x1x1 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Additional wooden plank\n📏 Size: approx. 4x1x0.5 ft\n⚖️ Weight: approx. 8 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:24:37'),
+(229, 24, 'user', 'correct', '2025-07-12 00:25:05'),
+(230, 24, 'assistant', '🟥 Item: Sofa\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 80 lbs\n\n🟥 Item: Wooden chair\n📏 Size: approx. 3x2x4 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Plastic storage containers (x2)\n📏 Size: approx. 2x1.5x1.5 ft each\n⚖️ Weight: approx. 10 lbs each\n\n🟥 Item: Cardboard box (medium size)\n📏 Size: approx. 1.5x2x1.5 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Cool container (ice cooler)\n📏 Size: approx. 2x1x1 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Additional wooden plank\n📏 Size: approx. 4x1x0.5 ft\n⚖️ Weight: approx. 8 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:25:05'),
+(231, 24, 'user', 'all good', '2025-07-12 00:25:15'),
+(232, 24, 'assistant', '🟥 Item: Sofa\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 80 lbs\n\n🟥 Item: Wooden chair\n📏 Size: approx. 3x2x4 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Plastic storage containers (x2)\n📏 Size: approx. 2x1.5x1.5 ft each\n⚖️ Weight: approx. 10 lbs each\n\n🟥 Item: Cardboard box (medium size)\n📏 Size: approx. 1.5x2x1.5 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Cool container (ice cooler)\n📏 Size: approx. 2x1x1 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Additional wooden plank\n📏 Size: approx. 4x1x0.5 ft\n⚖️ Weight: approx. 8 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:25:15'),
+(233, 24, 'user', '', '2025-07-12 00:25:43'),
+(234, 24, 'assistant', '🟥 Item: Sofa\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 80 lbs\n\n🟥 Item: Wooden chair\n📏 Size: approx. 3x2.5x4 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Plastic storage containers (x2)\n📏 Size: approx. 2x1.5x1.5 ft each\n⚖️ Weight: approx. 10 lbs each\n\n🟥 Item: Cardboard box (medium size)\n📏 Size: approx. 1.5x2x1.5 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Cool container (ice cooler)\n📏 Size: approx. 2x1x1 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Additional wooden plank\n📏 Size: approx. 4x1x0.5 ft\n⚖️ Weight: approx. 8 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:25:43'),
+(235, 24, 'user', 'al good', '2025-07-12 00:25:54'),
+(236, 24, 'assistant', '🟥 Item: Sofa\n📏 Size: approx. 6x3x3 ft\n⚖️ Weight: approx. 80 lbs\n\n🟥 Item: Wooden chair\n📏 Size: approx. 3x2x4 ft\n⚖️ Weight: approx. 15 lbs\n\n🟥 Item: Plastic storage containers (x3)\n📏 Size: approx. 2x1.5x1.5 ft each\n⚖️ Weight: approx. 10 lbs each\n\n🟥 Item: Cardboard box (medium size)\n📏 Size: approx. 1.5x2x1.5 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Cool container (ice cooler)\n📏 Size: approx. 2x1x1 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Additional wooden plank\n📏 Size: approx. 4x1x0.5 ft\n⚖️ Weight: approx. 8 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:25:54'),
+(237, 24, 'user', '', '2025-07-12 00:28:33'),
+(238, 24, 'assistant', '🟥 Item: Toy motorbikes (x2)\n📏 Size: approx. 3x2x2.5 ft each\n⚖️ Weight: approx. 30 lbs each\n\n🟥 Item: Bicycle (pink)\n📏 Size: approx. 4x2x2.5 ft\n⚖️ Weight: approx. 25 lbs\n\n🟥 Item: Garden hose (coiled)\n📏 Size: approx. 2x1x1 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Storage bins (x6, various colors)\n📏 Size: approx. 3x1.5x1.5 ft each\n⚖️ Weight: approx. 12 lbs each\n\n🟥 Item: Garbage can (green)\n📏 Size: approx. 3x1.5x1.5 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Folding chair\n📏 Size: approx. 3x2x5 ft (when unfolded)\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Shelf unit (metal)\n📏 Size: approx. 4x2x6 ft\n⚖️ Weight: approx. 60 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:28:33'),
+(239, 24, 'user', 'yes all good', '2025-07-12 00:28:47'),
+(240, 24, 'assistant', '🟥 Item: Toy motorbikes (x3)\n📏 Size: approx. 3x2x2.5 ft each\n⚖️ Weight: approx. 30 lbs each\n\n🟥 Item: Bicycle (pink)\n📏 Size: approx. 4x2x2.5 ft\n⚖️ Weight: approx. 25 lbs\n\n🟥 Item: Bicycle (orange)\n📏 Size: approx. 4x2x2.5 ft\n⚖️ Weight: approx. 25 lbs\n\n🟥 Item: Garden hose (coiled)\n📏 Size: approx. 2x1x1 ft\n⚖️ Weight: approx. 5 lbs\n\n🟥 Item: Storage bins (x6, various colors)\n📏 Size: approx. 3x1.5x1.5 ft each\n⚖️ Weight: approx. 12 lbs each\n\n🟥 Item: Garbage can (green)\n📏 Size: approx. 3x1.5x1.5 ft\n⚖️ Weight: approx. 20 lbs\n\n🟥 Item: Folding chair\n📏 Size: approx. 3x2x5 ft (when unfolded)\n⚖️ Weight: approx. 10 lbs\n\n🟥 Item: Shelf unit (metal)\n📏 Size: approx. 4x2x6 ft\n⚖️ Weight: approx. 60 lbs\n\nWould you like to modify, add, or remove any junk items from this list?', '2025-07-12 00:28:47');
 
 -- --------------------------------------------------------
 
@@ -307,7 +484,16 @@ INSERT INTO `conversations` (`id`, `user_id`, `initial_service_type`, `created_a
 (12, 1, NULL, '2025-07-11 15:48:21'),
 (13, 1, NULL, '2025-07-11 16:25:57'),
 (14, 1, NULL, '2025-07-11 16:32:13'),
-(15, 1, NULL, '2025-07-11 16:37:02');
+(15, 1, NULL, '2025-07-11 16:37:02'),
+(16, 1, NULL, '2025-07-11 16:55:04'),
+(17, 1, 'junk-removal-service', '2025-07-11 17:57:19'),
+(18, 1, 'junk-removal-service', '2025-07-11 19:02:13'),
+(19, 1, 'junk-removal-service', '2025-07-11 20:20:48'),
+(20, 2, 'junk-removal-service', '2025-07-11 23:11:08'),
+(21, 2, 'junk-removal-service', '2025-07-11 23:54:05'),
+(22, 2, 'junk-removal-service', '2025-07-12 00:04:15'),
+(23, 2, 'junk-removal-service', '2025-07-12 00:21:40'),
+(24, 1, 'junk-removal-service', '2025-07-12 00:24:18');
 
 -- --------------------------------------------------------
 
@@ -369,7 +555,13 @@ INSERT INTO `invoices` (`id`, `quote_id`, `user_id`, `invoice_number`, `amount`,
 (14, 11, 1, 'INV-F1C7A925', 20.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 15:50:31', '2025-07-11 15:50:55', NULL, NULL, 0.00, 0.00, 0),
 (15, 12, 1, 'INV-8E1485C9', 1501.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 16:27:34', '2025-07-11 16:27:53', NULL, NULL, 2.00, 3.00, 0),
 (16, 13, 1, 'INV-F5C8953E', 1797.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 16:33:44', '2025-07-11 16:33:59', NULL, NULL, 5.00, 2.00, 0),
-(17, 14, 1, 'INV-355682AE', 1001.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 16:38:50', '2025-07-11 16:39:02', NULL, NULL, 5.00, 6.00, 0);
+(17, 14, 1, 'INV-355682AE', 1001.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 16:38:50', '2025-07-11 16:39:02', NULL, NULL, 5.00, 6.00, 0),
+(18, 15, 1, 'INV-9592A5FB', 302.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 16:56:34', '2025-07-11 16:56:48', NULL, NULL, 10.00, 12.00, 0),
+(19, NULL, 1, 'INV-REL-3aad96', 5.00, 'paid', '2025-07-14', NULL, NULL, '2025-07-11 16:57:59', '2025-07-11 16:58:14', 'Invoice for Relocation Request on Booking #BOOK-484480', 11, 0.00, 0.00, 0),
+(20, NULL, 1, 'INV-EXT-466BF4', 20.00, 'paid', '2025-07-18', NULL, NULL, '2025-07-11 17:03:57', '2025-07-11 17:04:21', 'Rental extension of 2 days for Booking #BOOK-334C2310', 5, 0.00, 0.00, 0),
+(21, NULL, 1, 'INV-CHG-5F40CF', 20.00, 'pending', '2025-07-25', NULL, NULL, '2025-07-11 17:08:23', '2025-07-11 17:08:23', 'Additional charge for Booking #BOOK-334C2310: tental', 5, 0.00, 0.00, 0),
+(22, NULL, 1, 'INV-EXT-A1C4FA', 100.00, 'pending', '2025-07-18', NULL, NULL, '2025-07-11 17:09:06', '2025-07-11 17:09:06', 'Rental extension of 10 days for Booking #BOOK-D762B7', 10, 0.00, 0.00, 0),
+(23, NULL, 1, 'INV-CHG-D78C58', 50.00, 'pending', '2025-07-25', NULL, NULL, '2025-07-11 17:14:33', '2025-07-11 17:14:33', 'Additional charge for Booking #BOOK-D762B7: 2 ton extra', 10, 0.00, 0.00, 0);
 
 -- --------------------------------------------------------
 
@@ -420,7 +612,13 @@ INSERT INTO `invoice_items` (`id`, `invoice_id`, `description`, `quantity`, `uni
 (31, 17, 'Equipment Rental (Quote #14)', 1, 1000.00, 1000.00),
 (32, 17, ' - 15-yard dumpster (14 days)', 2, 0.00, 0.00),
 (33, 17, ' - 20-yard dumpster (14 days)', 1, 0.00, 0.00),
-(34, 17, ' - temporary toilet (14 days)', 2, 0.00, 0.00);
+(34, 17, ' - temporary toilet (14 days)', 2, 0.00, 0.00),
+(35, 18, 'Equipment Rental (Quote #15)', 1, 300.00, 300.00),
+(36, 18, ' - 15-yard dumpster (14 days)', 2, 0.00, 0.00),
+(37, 18, ' - 20-yard dumpster (14 days)', 1, 0.00, 0.00),
+(38, 18, ' - temporary toilet (14 days)', 2, 0.00, 0.00),
+(39, 19, 'Relocation Service for Booking #BOOK-484480', 1, 5.00, 5.00),
+(40, 23, 'Additional Charge (tonnage_overage) for Booking #BOOK-D762B7: 2 ton extra', 1, 50.00, 50.00);
 
 -- --------------------------------------------------------
 
@@ -525,7 +723,27 @@ INSERT INTO `notifications` (`id`, `user_id`, `type`, `message`, `link`, `is_rea
 (51, 1, 'booking_confirmed', 'Booking #BOOK-56F5A8 created for your paid invoice #INV-F5C8953E.', 'bookings?booking_id=9', 0, '2025-07-11 16:33:59'),
 (52, 1, 'new_quote', 'Your quote #14 is ready! The quoted price is $1,001.00.', 'quotes?quote_id=14', 0, '2025-07-11 16:38:38'),
 (53, 1, 'payment_due', 'Quote #Q14 accepted! Please pay the new invoice to confirm your booking.', 'invoices?invoice_id=17', 0, '2025-07-11 16:38:50'),
-(54, 1, 'booking_confirmed', 'Booking #BOOK-D762B7 created for your paid invoice #INV-355682AE.', 'bookings?booking_id=10', 0, '2025-07-11 16:39:02');
+(54, 1, 'booking_confirmed', 'Booking #BOOK-D762B7 created for your paid invoice #INV-355682AE.', 'bookings?booking_id=10', 0, '2025-07-11 16:39:02'),
+(55, 1, 'new_quote', 'Your quote #15 is ready! The quoted price is $302.00.', 'quotes?quote_id=15', 0, '2025-07-11 16:56:11'),
+(56, 1, 'payment_due', 'Quote #Q15 accepted! Please pay the new invoice to confirm your booking.', 'invoices?invoice_id=18', 0, '2025-07-11 16:56:34'),
+(57, 1, 'booking_confirmed', 'Booking #BOOK-484480 created for your paid invoice #INV-9592A5FB.', 'bookings?booking_id=11', 0, '2025-07-11 16:56:48'),
+(58, 1, 'booking_status_update', 'Your booking #BK-BOOK-484480 has been updated to: Delivered.', 'bookings?booking_id=11', 0, '2025-07-11 16:57:30'),
+(59, 1, 'payment_due', 'Your Relocation request for booking #BOOK-484480 requires payment. Please pay invoice #INV-REL-3aad96 to proceed.', 'invoices?invoice_id=19', 0, '2025-07-11 16:57:59'),
+(60, 1, 'system_message', 'Customer requested Relocation for Booking #BOOK-484480. Payment of $5.00 required.', 'bookings?booking_id=11', 0, '2025-07-11 16:57:59'),
+(61, 1, 'booking_status_update', 'Your booking #BK-BOOK-334C2310 has been updated to: Relocated.', 'bookings?booking_id=5', 0, '2025-07-11 16:58:40'),
+(62, 1, 'booking_status_update', 'Your booking #BK-BOOK-334C2310 has been updated to: Swapped.', 'bookings?booking_id=5', 0, '2025-07-11 16:59:13'),
+(63, 1, 'booking_status_update', 'Your booking #BK-BOOK-334C2310 has been updated to: Delivered.', 'bookings?booking_id=5', 0, '2025-07-11 17:02:24'),
+(64, 1, 'booking_status_update', 'Your booking #BK-BOOK-484480 has been updated to: Relocated.', 'bookings?booking_id=11', 0, '2025-07-11 17:03:20'),
+(65, 1, 'booking_status_update', 'Your booking #BK-BOOK-484480 has been updated to: Delivered.', 'bookings?booking_id=11', 0, '2025-07-11 17:03:36'),
+(66, 1, 'system_message', 'Customer has requested a 10-day extension for Booking ID #11. Please review and approve.', 'bookings?booking_id=11', 0, '2025-07-11 17:03:48'),
+(67, 1, 'booking_status_update', 'Your request to extend Booking #11 by 10 days has been submitted for approval.', 'bookings?booking_id=11', 0, '2025-07-11 17:03:48'),
+(68, 1, 'payment_due', 'Your rental extension request for Booking #BOOK-334C2310 has been approved! Please pay the new invoice to confirm.', 'bookings?booking_id=5', 0, '2025-07-11 17:03:57'),
+(69, 1, 'booking_status_update', 'Your booking #BK-BOOK-D762B7 has been updated to: Delivered.', 'bookings?booking_id=10', 0, '2025-07-11 17:07:42'),
+(70, 1, 'system_message', 'Customer has requested a 10-day extension for Booking ID #10. Please review and approve.', 'bookings?booking_id=10', 0, '2025-07-11 17:07:57'),
+(71, 1, 'booking_status_update', 'Your request to extend Booking #10 by 10 days has been submitted for approval.', 'bookings?booking_id=10', 0, '2025-07-11 17:07:57'),
+(72, 1, 'payment_due', 'An additional charge of $20.00 for \'tental\' has been added to Booking #BOOK-334C2310.', 'invoices?invoice_id=21', 0, '2025-07-11 17:08:23'),
+(73, 1, 'payment_due', 'Your rental extension request for Booking #BOOK-D762B7 has been approved! Please pay the new invoice to confirm.', 'bookings?booking_id=10', 0, '2025-07-11 17:09:06'),
+(74, 1, 'payment_due', 'An additional charge of $50.00 for \'2 ton extra\' has been added to Booking #BOOK-D762B7.', 'invoices?invoice_id=23', 0, '2025-07-11 17:14:33');
 
 -- --------------------------------------------------------
 
@@ -537,7 +755,7 @@ CREATE TABLE `quotes` (
   `id` int NOT NULL,
   `user_id` int NOT NULL,
   `service_type` enum('equipment_rental','junk_removal') NOT NULL,
-  `status` enum('pending','quoted','accepted','rejected','converted_to_booking') NOT NULL DEFAULT 'pending',
+  `status` enum('customer_draft','pending','quoted','accepted','rejected','converted_to_booking') NOT NULL DEFAULT 'customer_draft',
   `customer_type` enum('Residential','Commercial') DEFAULT NULL,
   `location` varchar(255) DEFAULT NULL,
   `delivery_date` date DEFAULT NULL,
@@ -568,7 +786,6 @@ CREATE TABLE `quotes` (
 --
 
 INSERT INTO `quotes` (`id`, `user_id`, `service_type`, `status`, `customer_type`, `location`, `delivery_date`, `delivery_time`, `removal_date`, `removal_time`, `live_load_needed`, `is_urgent`, `driver_instructions`, `quoted_price`, `daily_rate`, `swap_charge`, `relocation_charge`, `quote_details`, `admin_notes`, `created_at`, `updated_at`, `is_swap_included`, `is_relocation_included`, `discount`, `tax`, `attachment_path`, `is_viewed_by_admin`) VALUES
-(2, 2, 'equipment_rental', 'pending', 'Residential', 'Dallas, Texas 7110', '2023-10-07', 'morning', NULL, NULL, 0, 0, NULL, NULL, NULL, 0.00, 0.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-07\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjonyes@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilets\"}]}', NULL, '2025-07-11 05:58:01', '2025-07-11 06:17:19', 0, 0, 0.00, 0.00, NULL, 1),
 (3, 1, 'equipment_rental', 'accepted', 'Residential', 'Dallas, Texas 7110', '2023-10-24', 'morning', NULL, NULL, 0, 0, 'Drop on the footpath beside the house', 500.00, NULL, 0.00, 0.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-24\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"Temporary toilet\"}], \"driver_instructions\": \"Drop on the footpath beside the house\"}', '', '2025-07-11 05:59:45', '2025-07-11 06:08:27', 0, 0, 0.00, 0.00, NULL, 1),
 (4, 1, 'equipment_rental', 'accepted', 'Residential', 'Dallas, Texas 7110', '2023-10-07', 'morning', NULL, NULL, 0, 0, NULL, 400.00, NULL, 0.00, 0.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-07\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"Temporary Toilets\"}]}', '', '2025-07-11 06:57:16', '2025-07-11 07:05:20', 0, 0, 60.00, 2.00, NULL, 1),
 (5, 1, 'equipment_rental', 'accepted', 'Residential', 'dallas texas 7110', '2023-10-04', 'morning', NULL, NULL, 0, 0, NULL, 600.00, NULL, 0.00, 0.00, '{\"location\": \"dallas texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-04\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"jon vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"12313123231\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}]}', '', '2025-07-11 07:08:41', '2025-07-11 07:20:37', 0, 0, 0.00, 0.00, NULL, 1),
@@ -580,7 +797,9 @@ INSERT INTO `quotes` (`id`, `user_id`, `service_type`, `status`, `customer_type`
 (11, 1, 'equipment_rental', 'accepted', 'Residential', 'Dallas, Texas 7110', '2023-10-06', '09:00', '2025-07-15', '3:00', 0, 0, 'Drop on footpath', 20.00, 10.00, 5.00, 10.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-06\", \"service_time\": \"09:00\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilets\"}], \"driver_instructions\": \"Drop on footpath\"}', '', '2025-07-11 15:49:04', '2025-07-11 15:50:31', 0, 0, 0.00, 0.00, NULL, 1),
 (12, 1, 'equipment_rental', 'accepted', 'Residential', 'Dallas, Texas 7110', '2023-11-29', 'morning', NULL, NULL, 0, 0, 'Drop it to footpath', 1500.00, 10.00, 5.00, 6.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-11-29\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"12311232321\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}], \"driver_instructions\": \"Drop it to footpath\"}', '', '2025-07-11 16:26:36', '2025-07-11 16:27:34', 0, 0, 2.00, 3.00, NULL, 1),
 (13, 1, 'equipment_rental', 'accepted', 'Residential', 'dallas texas 7110', '2023-10-05', 'morning', NULL, NULL, 0, 0, NULL, 1800.00, 20.00, 23.00, 35.00, '{\"location\": \"dallas texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-05\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"12122122222\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}]}', '', '2025-07-11 16:32:37', '2025-07-11 16:33:44', 0, 0, 5.00, 2.00, NULL, 1),
-(14, 1, 'equipment_rental', 'accepted', 'Residential', 'Dallas, Texas 7110', '2023-10-03', 'Morning', NULL, NULL, 0, 0, 'Drop it on footpath', 1000.00, 10.00, 10.00, 50.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-03\", \"service_time\": \"Morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}], \"driver_instructions\": \"Drop it on footpath\"}', '', '2025-07-11 16:37:38', '2025-07-11 16:38:50', 0, 0, 5.00, 6.00, NULL, 1);
+(14, 1, 'equipment_rental', 'accepted', 'Residential', 'Dallas, Texas 7110', '2023-10-03', 'Morning', NULL, NULL, 0, 0, 'Drop it on footpath', 1000.00, 10.00, 10.00, 50.00, '{\"location\": \"Dallas, Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-03\", \"service_time\": \"Morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}], \"driver_instructions\": \"Drop it on footpath\"}', '', '2025-07-11 16:37:38', '2025-07-11 16:38:50', 0, 0, 5.00, 6.00, NULL, 1),
+(15, 1, 'equipment_rental', 'accepted', 'Residential', 'dallas texas 7110', '2023-10-15', 'morning', NULL, NULL, 0, 0, NULL, 300.00, 10.00, 5.00, 5.00, '{\"location\": \"dallas texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-15\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"jon vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"12121212112\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}]}', '', '2025-07-11 16:55:22', '2025-07-11 16:56:34', 0, 0, 10.00, 12.00, NULL, 1),
+(20, 1, 'equipment_rental', 'customer_draft', 'Residential', 'Dallas Texas 7110', '2023-10-06', 'morning', NULL, NULL, 0, 0, NULL, NULL, NULL, 0.00, 0.00, '{\"location\": \"Dallas Texas 7110\", \"is_urgent\": false, \"service_date\": \"2023-10-06\", \"service_time\": \"morning\", \"service_type\": \"equipment_rental\", \"customer_name\": \"Jon Vital\", \"customer_type\": \"Residential\", \"customer_email\": \"jjony@test.com\", \"customer_phone\": \"121321312\", \"live_load_needed\": false, \"equipment_details\": [{\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"15-yard dumpster\"}, {\"quantity\": 1, \"duration_days\": 14, \"equipment_name\": \"20-yard dumpster\"}, {\"quantity\": 2, \"duration_days\": 14, \"equipment_name\": \"temporary toilet\"}]}', NULL, '2025-07-12 00:22:34', '2025-07-12 00:22:34', 0, 0, 0.00, 0.00, NULL, 0);
 
 -- --------------------------------------------------------
 
@@ -603,9 +822,6 @@ CREATE TABLE `quote_equipment_details` (
 --
 
 INSERT INTO `quote_equipment_details` (`id`, `quote_id`, `equipment_id`, `equipment_name`, `quantity`, `duration_days`, `specific_needs`) VALUES
-(4, 2, NULL, '15-yard dumpster', 2, 14, NULL),
-(5, 2, NULL, '20-yard dumpster', 1, 14, NULL),
-(6, 2, NULL, 'temporary toilets', 2, 14, NULL),
 (7, 3, NULL, '15-yard dumpster', 2, 14, NULL),
 (8, 3, NULL, '20-yard dumpster', 1, 14, NULL),
 (9, 3, NULL, 'Temporary toilet', 2, 14, NULL),
@@ -641,7 +857,13 @@ INSERT INTO `quote_equipment_details` (`id`, `quote_id`, `equipment_id`, `equipm
 (39, 13, NULL, 'temporary toilet', 2, 14, NULL),
 (40, 14, NULL, '15-yard dumpster', 2, 14, NULL),
 (41, 14, NULL, '20-yard dumpster', 1, 14, NULL),
-(42, 14, NULL, 'temporary toilet', 2, 14, NULL);
+(42, 14, NULL, 'temporary toilet', 2, 14, NULL),
+(43, 15, NULL, '15-yard dumpster', 2, 14, NULL),
+(44, 15, NULL, '20-yard dumpster', 1, 14, NULL),
+(45, 15, NULL, 'temporary toilet', 2, 14, NULL),
+(46, 20, NULL, '15-yard dumpster', 2, 14, NULL),
+(47, 20, NULL, '20-yard dumpster', 1, 14, NULL),
+(48, 20, NULL, 'temporary toilet', 2, 14, NULL);
 
 -- --------------------------------------------------------
 
@@ -711,7 +933,7 @@ CREATE TABLE `users` (
 
 INSERT INTO `users` (`id`, `first_name`, `last_name`, `email`, `phone_number`, `password`, `address`, `city`, `state`, `zip_code`, `role`, `created_at`, `updated_at`) VALUES
 (1, 'jon', 'vital', 'jjony@test.com', '123131313', '$2y$10$IH1CJpttFvwjthD67pyiWer7nICgdu76NI3gpZzv7S2K4TEqDhxZC', NULL, NULL, NULL, NULL, 'customer', '2025-07-11 03:08:16', '2025-07-11 03:09:23'),
-(2, 'Jon', 'Vital', 'jjonyes@test.com', '121321312', '$2y$10$4obf3n3aGQ/oT58i44GX..1js4j0F.ev5XTPffArvRblO3IcJGIe.', NULL, NULL, NULL, NULL, 'customer', '2025-07-11 05:58:01', '2025-07-11 05:58:01'),
+(2, 'Jon', 'Vital', 'jjonyes@test.com', '121321312', '$2y$10$osaPsnLr1MXt0dW4tTGame6DVLlYsjJqy.XQT26URLoHYQ/WgAB8S', NULL, NULL, NULL, NULL, 'customer', '2025-07-11 05:58:01', '2025-07-11 23:08:48'),
 (3, 'Admin', 'User', 'admin@admin.com', '1234567890', '$2y$10$pmYXW9RjE0CjZYE/09h/uu6gwa.TKKnSK9T2Z7UlOxtxYwvqyy0gO', NULL, NULL, NULL, NULL, 'admin', '2025-07-11 06:04:59', '2025-07-11 06:05:32');
 
 -- --------------------------------------------------------
@@ -740,7 +962,8 @@ CREATE TABLE `user_payment_methods` (
 --
 
 INSERT INTO `user_payment_methods` (`id`, `user_id`, `braintree_payment_token`, `card_type`, `last_four`, `expiration_month`, `expiration_year`, `cardholder_name`, `billing_address`, `is_default`, `created_at`, `updated_at`) VALUES
-(1, 1, 'token_6870aa97e1e3d4444', 'Unknown', '4444', '08', '2030', 'demo company', '907 Nobel Street', 1, '2025-07-11 06:09:27', '2025-07-11 07:32:01');
+(1, 1, 'token_6870aa97e1e3d4444', 'Unknown', '4444', '08', '2030', 'demo company', '907 Nobel Street', 0, '2025-07-11 06:09:27', '2025-07-11 17:28:31'),
+(2, 1, 'local_687149b8d82054444', 'Unknown', '4444', '02', '2030', 'demo comap', '907 Nobel Street', 1, '2025-07-11 17:28:24', '2025-07-11 17:28:31');
 
 -- --------------------------------------------------------
 
@@ -936,37 +1159,37 @@ ALTER TABLE `api_keys`
 -- AUTO_INCREMENT for table `bookings`
 --
 ALTER TABLE `bookings`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `booking_charges`
 --
 ALTER TABLE `booking_charges`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `booking_extension_requests`
 --
 ALTER TABLE `booking_extension_requests`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `booking_status_history`
 --
 ALTER TABLE `booking_status_history`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=25;
 
 --
 -- AUTO_INCREMENT for table `chat_messages`
 --
 ALTER TABLE `chat_messages`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=87;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=241;
 
 --
 -- AUTO_INCREMENT for table `conversations`
 --
 ALTER TABLE `conversations`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=25;
 
 --
 -- AUTO_INCREMENT for table `equipment`
@@ -978,19 +1201,19 @@ ALTER TABLE `equipment`
 -- AUTO_INCREMENT for table `invoices`
 --
 ALTER TABLE `invoices`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=24;
 
 --
 -- AUTO_INCREMENT for table `invoice_items`
 --
 ALTER TABLE `invoice_items`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=35;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=41;
 
 --
 -- AUTO_INCREMENT for table `junk_removal_details`
 --
 ALTER TABLE `junk_removal_details`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `junk_removal_media`
@@ -1002,19 +1225,19 @@ ALTER TABLE `junk_removal_media`
 -- AUTO_INCREMENT for table `notifications`
 --
 ALTER TABLE `notifications`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=55;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=75;
 
 --
 -- AUTO_INCREMENT for table `quotes`
 --
 ALTER TABLE `quotes`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
 -- AUTO_INCREMENT for table `quote_equipment_details`
 --
 ALTER TABLE `quote_equipment_details`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=43;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=49;
 
 --
 -- AUTO_INCREMENT for table `reviews`
@@ -1038,7 +1261,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `user_payment_methods`
 --
 ALTER TABLE `user_payment_methods`
-  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `vendors`
